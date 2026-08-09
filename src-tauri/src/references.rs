@@ -96,10 +96,7 @@ fn validate_reference_constraints(path: &Path) -> CommandResult<(u32, u32, u64)>
     let (width, height) = image::image_dimensions(path)
         .map_err(|error| CommandError::new("invalid_reference_image", error.to_string()))?;
     let pixels = u64::from(width).saturating_mul(u64::from(height));
-    if width > MAX_REFERENCE_EDGE
-        || height > MAX_REFERENCE_EDGE
-        || pixels > MAX_REFERENCE_PIXELS
-    {
+    if width > MAX_REFERENCE_EDGE || height > MAX_REFERENCE_EDGE || pixels > MAX_REFERENCE_PIXELS {
         return Err(CommandError::new(
             "reference_too_large",
             format!("Reference dimensions {width}x{height} exceed the safe import limit"),
@@ -125,9 +122,7 @@ fn canonical_reference_directory(project_root: &Path, path: &Path) -> CommandRes
         )
     })?;
     let components: Vec<_> = relative.components().collect();
-    if components.len() < 2
-        || components[1].as_os_str().to_str() != Some("references")
-    {
+    if components.len() < 2 || components[1].as_os_str().to_str() != Some("references") {
         return Err(CommandError::new(
             "reference_outside_workspace",
             "Reference directory must be inside a worktree references folder",
@@ -498,7 +493,15 @@ pub fn prompt_context(
                    JOIN projects p ON p.id = r.project_id
                    WHERE c.id=?1 AND r.id=?2"#,
                 params![conversation_id, id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
             )
             .optional()?;
         let (name, path, category, notes, project_path) = value.ok_or_else(|| {

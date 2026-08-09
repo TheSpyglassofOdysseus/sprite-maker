@@ -389,8 +389,8 @@ mod tests {
         let (root, state) = fixture();
         let project = root.join("project");
         std::fs::create_dir_all(&project).expect("project should exist");
-        let first = register_workspace("Test", &project, &state, false)
-            .expect("workspace should register");
+        let first =
+            register_workspace("Test", &project, &state, false).expect("workspace should register");
         let second = register_workspace("Test again", &project, &state, false)
             .expect("duplicate open should be graceful");
         assert_eq!(first.id, second.id);
