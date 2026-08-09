@@ -34,15 +34,16 @@ Fork policy:
 
 Implemented on this branch.
 
-### 2. Desktop webview policy
+### 2. Desktop webview and capability policy
 
-Upstream disabled Content Security Policy with `csp: null`.
+Upstream disabled Content Security Policy with `csp: null` and granted the default opener capability even though the UI only needs to reveal exported files in the system file manager.
 
 Fork policy:
 
 - Enable a restrictive local CSP.
 - Permit only Tauri IPC and the local asset protocol required to display project images.
 - Do not add remote script or CDN origins.
+- Restrict the opener plugin to `opener:allow-reveal-item-in-dir` instead of the full default opener set.
 
 Implemented on this branch.
 
@@ -56,7 +57,7 @@ Implemented on this branch.
 
 ### 4. Asset and reference path containment
 
-Asset and reference files are now treated as untrusted filesystem inputs even when their textual path appears to be inside a workspace.
+Asset and reference files are treated as untrusted filesystem inputs even when their textual path appears to be inside a workspace.
 
 Fork policy:
 
@@ -87,28 +88,33 @@ Implemented on this branch through hardened list/delete commands.
 No local installation is approved until the following gates pass from a clean checkout:
 
 - locked Bun dependency install
+- Bun high/critical dependency audit
 - Svelte/TypeScript check
-- Rust formatting normalization/check
+- Rust formatting check
 - Rust test suite
 - Clippy with warnings denied
 - clean Windows NSIS installer build
 
-A GitHub Actions workflow implementing these gates is included on this branch. The first hardened validation pass has already produced a clean frontend check, a passing Rust test suite after rustfmt normalization, and a successful Windows NSIS build. Current-head validation continues after each hardening commit.
+GitHub Actions workflows implementing these gates are included on this branch. Earlier hardened commits have already produced a clean frontend check, a passing Rust test suite, and a successful Windows NSIS build. The reviewed head commit must repeat the complete gate before installation.
 
 ### 7. AI generation isolation
 
-Current upstream behavior launches Codex in `workspace-write` with the full project root as the working directory. The prompt asks the agent to preserve unrelated files, but the filesystem boundary still allows project writes.
+Upstream launched Codex in `workspace-write` with the full real project root as the working directory. Prompt wording asked the agent to preserve unrelated files, but the filesystem boundary still permitted direct project writes.
 
-Required design before this is considered fully hardened:
+Fork policy:
 
-1. Create a per-generation staging workspace.
-2. Copy only the render tools and required source/reference assets into staging.
-3. Run the provider with staging as its writable working directory.
-4. Validate the generation manifest, output paths, dimensions, alpha, file counts, and hashes.
-5. Promote only validated outputs into the real project using Sprite Studio's versioning layer.
-6. Preserve failed staging jobs for diagnosis without modifying production assets.
+1. Create a per-conversation disposable staging workspace under the operating-system temporary directory.
+2. Copy project assets, animation context, worktree references, and Sprite Studio render tools into staging while skipping symbolic links and enforcing a staging-size bound.
+3. Rewrite absolute project paths in the provider prompt to the staging root.
+4. Run Codex with staging, not the real project, as its writable working directory.
+5. Permit successful text-only turns to promote no files.
+6. If a generation manifest exists, validate every path, category, PNG file, image dimension, file size, file count, and duplicate entry before promotion.
+7. Reserve non-colliding destination names so generated files never overwrite existing project assets.
+8. Validate the entire multi-file plan before copying and roll back copied files if promotion fails.
+9. Write the real project's `last-generation.json` only after successful promotion.
+10. Preserve failed or cancelled staging work for diagnosis rather than modifying production assets.
 
-Do not simulate this protection with prompt wording alone.
+Implemented on this branch. This changes the security boundary from prompt-based cooperation to filesystem isolation plus validated promotion.
 
 ## Production improvements after hardening
 
@@ -156,8 +162,8 @@ Allow project-specific playground harnesses so movement speed, jump arcs, ledges
 Do not install the fork on the primary workstation until:
 
 1. CI quality gates pass on the reviewed head commit.
-2. A Windows NSIS artifact is produced from that same reviewed commit.
-3. The installer artifact can be traced to that commit.
+2. A Windows NSIS installer is produced from that same reviewed commit.
+3. The installer can be traced to that commit.
 4. A temporary test workspace passes create/open/remove/delete safety checks.
 5. One imported master asset completes an animation/export round trip without modifying unrelated assets.
 
