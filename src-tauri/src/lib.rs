@@ -4,6 +4,7 @@ mod conversations;
 mod database;
 mod error;
 mod generation_staging;
+mod godot_export;
 mod jobs;
 mod models;
 mod motion_planner;
@@ -89,6 +90,7 @@ pub fn run() {
             animations::save_animation,
             animations::delete_animation,
             animations::export_animation,
+            godot_export::export_godot_animation,
             jobs::list_jobs,
             jobs::cancel_job,
             jobs::list_sprite_sheets,
