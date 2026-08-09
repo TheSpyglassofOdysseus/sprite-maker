@@ -18,15 +18,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
+      - name: Configure Rust toolchain
+        run: |
+          rustup default stable
+          rustup component add rustfmt clippy
+          rustc --version
+          cargo --version
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Install Bun
+        run: |
+          npm install --global bun
+          bun --version
 
       - name: Install Tauri Linux prerequisites
         run: |
@@ -65,13 +67,18 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
+      - name: Configure Rust toolchain
+        shell: pwsh
+        run: |
+          rustup default stable
+          rustc --version
+          cargo --version
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Bun
+        shell: pwsh
+        run: |
+          npm install --global bun
+          bun --version
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
