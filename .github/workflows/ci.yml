@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   quality:
@@ -60,26 +60,6 @@ jobs:
 
       - name: Check Svelte and TypeScript
         run: bun run check
-
-      - name: Apply Rust formatter in validation checkout
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all
-
-      - name: Commit formatter-only changes to review branch
-        if: github.event_name == 'push' && github.ref_name == 'review/hardening-v1'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          if git diff --quiet -- src-tauri; then
-            echo "Rust source already formatted"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src-tauri
-          git commit -m "Apply rustfmt to hardened Rust source"
-          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}.git"
-          git push origin "HEAD:review/hardening-v1"
 
       - name: Verify Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
