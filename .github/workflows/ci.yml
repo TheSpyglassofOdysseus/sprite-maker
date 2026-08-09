@@ -58,6 +58,9 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
+      - name: Audit frontend dependencies
+        run: bun audit --audit-level=high
+
       - name: Check Svelte and TypeScript
         run: bun run check
 
