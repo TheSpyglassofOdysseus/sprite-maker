@@ -4,7 +4,6 @@ use crate::{
     AppState,
 };
 use chrono::Utc;
-use image::GenericImageView;
 use rusqlite::{params, OptionalExtension};
 use std::path::{Path, PathBuf};
 use tauri::{Manager, State};
