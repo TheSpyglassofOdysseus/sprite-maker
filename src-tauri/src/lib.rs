@@ -10,6 +10,7 @@ mod providers;
 mod quality;
 mod references;
 mod safe_assets;
+mod safe_references;
 mod settings;
 mod sprite_harness;
 mod templates;
@@ -65,10 +66,10 @@ pub fn run() {
             providers::start_provider_message,
             providers::cancel_provider_request,
             motion_planner::plan_motion,
-            references::list_reference_images,
-            references::import_reference_image,
+            safe_references::list_reference_images,
+            safe_references::import_reference_image,
             references::update_reference_image,
-            references::delete_reference_image,
+            safe_references::delete_reference_image,
             references::set_conversation_reference,
             references::list_conversation_reference_ids,
             templates::list_animation_templates,
