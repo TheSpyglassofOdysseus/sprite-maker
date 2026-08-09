@@ -71,7 +71,7 @@ fn validated_sheet_path(root: &Path, path: &str) -> CommandResult<Option<PathBuf
 }
 
 #[tauri::command]
-pub fn list_sprite_sheets(
+pub fn list_sprite_sheets_safe(
     project_id: String,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -106,7 +106,7 @@ pub fn list_sprite_sheets(
 }
 
 #[tauri::command]
-pub fn delete_sprite_sheet(id: String, state: State<'_, AppState>) -> CommandResult<()> {
+pub fn delete_sprite_sheet_safe(id: String, state: State<'_, AppState>) -> CommandResult<()> {
     let stored: Option<(String, String, String)> = {
         let connection = state
             .db
@@ -148,7 +148,6 @@ pub fn delete_sprite_sheet(id: String, state: State<'_, AppState>) -> CommandRes
 #[cfg(test)]
 mod tests {
     use super::validated_sheet_path;
-    use std::path::PathBuf;
     use uuid::Uuid;
 
     #[test]
