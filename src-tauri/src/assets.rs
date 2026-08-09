@@ -89,9 +89,7 @@ fn validate_image_constraints(path: &Path) -> CommandResult<(u32, u32, u64)> {
     if width > MAX_IMAGE_EDGE || height > MAX_IMAGE_EDGE || pixels > MAX_IMAGE_PIXELS {
         return Err(CommandError::new(
             "image_too_large",
-            format!(
-                "Image dimensions {width}x{height} exceed the safe import limit"
-            ),
+            format!("Image dimensions {width}x{height} exceed the safe import limit"),
         ));
     }
     Ok((width, height, metadata.len()))
