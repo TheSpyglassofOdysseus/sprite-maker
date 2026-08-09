@@ -54,20 +54,48 @@ Fork identifier: `com.spyglassofodysseus.sprite-studio`.
 
 Implemented on this branch.
 
-### 4. Automated validation
+### 4. Asset and reference path containment
+
+Asset and reference files are now treated as untrusted filesystem inputs even when their textual path appears to be inside a workspace.
+
+Fork policy:
+
+- asset scanning skips symbolic links
+- asset paths are canonicalized and must resolve below the workspace `assets/` directory
+- image imports are bounded by file size, dimensions, and total pixels before full decode
+- reference files use an approved image-extension set and the same resource bounds
+- reference paths must resolve below a worktree's `references/` directory
+- the Tauri asset protocol receives individual validated files instead of recursive access to the entire asset tree
+- generated manifests are rejected if their paths escape the managed asset root
+
+Implemented on this branch.
+
+### 5. Stored sprite-sheet paths
+
+Persisted export paths are revalidated before they are exposed to the webview or deleted.
+
+Fork policy:
+
+- sprite-sheet PNG and metadata paths must resolve below the owning project's `exports/sprite-sheets/` directory
+- missing generated files may be forgotten safely without deleting any unrelated path
+- symbolic-link escapes are rejected
+
+Implemented on this branch through hardened list/delete commands.
+
+### 6. Automated validation
 
 No local installation is approved until the following gates pass from a clean checkout:
 
 - locked Bun dependency install
 - Svelte/TypeScript check
-- Rust formatting check
+- Rust formatting normalization/check
 - Rust test suite
 - Clippy with warnings denied
 - clean Windows NSIS installer build
 
-A GitHub Actions workflow implementing these gates is included on this branch.
+A GitHub Actions workflow implementing these gates is included on this branch. The first hardened validation pass has already produced a clean frontend check, a passing Rust test suite after rustfmt normalization, and a successful Windows NSIS build. Current-head validation continues after each hardening commit.
 
-### 5. AI generation isolation
+### 7. AI generation isolation
 
 Current upstream behavior launches Codex in `workspace-write` with the full project root as the working directory. The prompt asks the agent to preserve unrelated files, but the filesystem boundary still allows project writes.
 
@@ -127,8 +155,8 @@ Allow project-specific playground harnesses so movement speed, jump arcs, ledges
 
 Do not install the fork on the primary workstation until:
 
-1. CI quality gates pass.
-2. A Windows NSIS artifact is produced from the reviewed commit.
+1. CI quality gates pass on the reviewed head commit.
+2. A Windows NSIS artifact is produced from that same reviewed commit.
 3. The installer artifact can be traced to that commit.
 4. A temporary test workspace passes create/open/remove/delete safety checks.
 5. One imported master asset completes an animation/export round trip without modifying unrelated assets.
