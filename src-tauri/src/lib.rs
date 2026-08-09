@@ -9,6 +9,7 @@ mod motion_planner;
 mod providers;
 mod quality;
 mod references;
+mod safe_assets;
 mod settings;
 mod sprite_harness;
 mod templates;
@@ -74,12 +75,12 @@ pub fn run() {
             templates::create_animation_template,
             templates::apply_animation_template,
             templates::delete_animation_template,
-            assets::scan_assets,
-            assets::import_asset,
-            assets::rename_asset,
-            assets::delete_asset,
-            assets::export_asset,
-            assets::get_generation_manifest,
+            safe_assets::scan_assets,
+            safe_assets::import_asset,
+            safe_assets::rename_asset,
+            safe_assets::delete_asset,
+            safe_assets::export_asset,
+            safe_assets::get_generation_manifest,
             assets::list_asset_versions,
             animations::list_animations,
             animations::save_animation,
