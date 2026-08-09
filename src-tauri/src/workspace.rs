@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 use tauri::State;
 use uuid::Uuid;
 
+const WORKSPACE_OWNER_MARKER: &str = ".sprite-studio/workspace-owner";
+const WORKSPACE_OWNER_SENTINEL: &str = "sprite-studio-owned-workspace-v1\n";
+
 fn row_to_workspace(row: &rusqlite::Row<'_>) -> rusqlite::Result<Workspace> {
     Ok(Workspace {
         id: row.get(0)?,
@@ -49,6 +52,35 @@ fn initialize_workspace(path: &Path) -> CommandResult<()> {
         std::fs::write(rig_tool, bundled_rig_tool)?;
     }
     Ok(())
+}
+
+fn directory_is_empty(path: &Path) -> CommandResult<bool> {
+    match std::fs::read_dir(path)?.next() {
+        None => Ok(true),
+        Some(Ok(_)) => Ok(false),
+        Some(Err(error)) => Err(CommandError::from(error)),
+    }
+}
+
+fn write_workspace_owner_marker(path: &Path) -> CommandResult<()> {
+    let marker = path.join(WORKSPACE_OWNER_MARKER);
+    let parent = marker.parent().ok_or_else(|| {
+        CommandError::new(
+            "workspace_marker_error",
+            "Could not resolve the workspace ownership marker directory",
+        )
+    })?;
+    std::fs::create_dir_all(parent)?;
+    std::fs::write(marker, WORKSPACE_OWNER_SENTINEL)?;
+    Ok(())
+}
+
+fn owns_workspace(path: &Path) -> CommandResult<bool> {
+    let marker = path.join(WORKSPACE_OWNER_MARKER);
+    if !marker.is_file() {
+        return Ok(false);
+    }
+    Ok(std::fs::read_to_string(marker)? == WORKSPACE_OWNER_SENTINEL)
 }
 
 fn normalized_path(path: &str, create: bool) -> CommandResult<PathBuf> {
@@ -110,7 +142,14 @@ pub fn create_workspace(
         ));
     }
     let path = normalized_path(&path, true)?;
+    if !directory_is_empty(&path)? {
+        return Err(CommandError::new(
+            "workspace_not_empty",
+            "Create a Sprite Studio workspace in a new empty folder. Use Open for an existing folder.",
+        ));
+    }
     initialize_workspace(&path)?;
+    write_workspace_owner_marker(&path)?;
     register_workspace(name, &path, &state)
 }
 
@@ -250,6 +289,12 @@ pub fn delete_workspace(id: String, state: State<'_, AppState>) -> CommandResult
             "Refusing to delete a broad filesystem path",
         ));
     }
+    if !owns_workspace(&path)? {
+        return Err(CommandError::new(
+            "unsafe_delete",
+            "This folder was opened by Sprite Studio but was not created as an owned workspace. Remove it from the recent-workspace list instead of deleting it from disk.",
+        ));
+    }
     std::fs::remove_dir_all(&path)?;
     remove_workspace(id, state)
 }
@@ -332,6 +377,22 @@ mod tests {
             .contains("layered pixel-rig renderer"));
         assert!(root.join("assets/characters").is_dir());
         assert!(root.join("assets/creatures").is_dir());
+        assert!(!owns_workspace(&root).expect("ownership check should work"));
+        std::fs::remove_dir_all(root).expect("temporary fixture should be removable");
+    }
+
+    #[test]
+    fn ownership_requires_the_exact_sprite_studio_marker() {
+        let root =
+            std::env::temp_dir().join(format!("sprite-studio-owner-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).expect("temporary directory should be created");
+        initialize_workspace(&root).expect("workspace should initialize");
+        assert!(!owns_workspace(&root).expect("ownership check should work"));
+        write_workspace_owner_marker(&root).expect("marker should be written");
+        assert!(owns_workspace(&root).expect("ownership check should work"));
+        std::fs::write(root.join(WORKSPACE_OWNER_MARKER), "wrong-owner\n")
+            .expect("marker should be replaceable");
+        assert!(!owns_workspace(&root).expect("ownership check should work"));
         std::fs::remove_dir_all(root).expect("temporary fixture should be removable");
     }
 }
