@@ -398,7 +398,10 @@ async fn run_codex(app: AppHandle, run: ProviderRun, mut cancel_rx: oneshot::Rec
     let stage = match GenerationStage::prepare(&workspace, &workspace_id, &conversation_id) {
         Ok(stage) => stage,
         Err(error) => {
-            let message = format!("Could not prepare isolated generation staging: {}", error.message);
+            let message = format!(
+                "Could not prepare isolated generation staging: {}",
+                error.message
+            );
             let _ = update_message(&state, &assistant_id, &message, "failed");
             emit(&app, &request_id, &conversation_id, "failed", message);
             return;

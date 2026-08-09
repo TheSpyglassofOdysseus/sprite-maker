@@ -80,8 +80,9 @@ impl GenerationStage {
                 "Generation completed without a staged output manifest",
             ));
         }
-        let mut manifest: GenerationManifest = serde_json::from_slice(&fs::read(&manifest_path)?)
-            .map_err(|error| CommandError::new("invalid_generation", error.to_string()))?;
+        let mut manifest: GenerationManifest =
+            serde_json::from_slice(&fs::read(&manifest_path)?)
+                .map_err(|error| CommandError::new("invalid_generation", error.to_string()))?;
         if manifest.files.is_empty() || manifest.files.len() > MAX_GENERATED_FILES {
             return Err(CommandError::new(
                 "invalid_generation",
@@ -113,11 +114,7 @@ impl GenerationStage {
             validate_generated_image(&staged)?;
 
             let requested = self.real_root.join(&relative_path);
-            let destination = unique_destination(
-                &real_assets,
-                &requested,
-                &reserved_destinations,
-            )?;
+            let destination = unique_destination(&real_assets, &requested, &reserved_destinations)?;
             reserved_destinations.insert(destination.clone());
             let promoted_relative = destination
                 .strip_prefix(&self.real_root)
@@ -230,7 +227,10 @@ fn copy_tree(source: &Path, destination: &Path, copied_bytes: &mut u64) -> Comma
         } else if file_type.is_file() {
             let bytes = entry.metadata()?.len();
             *copied_bytes = copied_bytes.checked_add(bytes).ok_or_else(|| {
-                CommandError::new("generation_stage_too_large", "Generation staging size overflowed")
+                CommandError::new(
+                    "generation_stage_too_large",
+                    "Generation staging size overflowed",
+                )
             })?;
             if *copied_bytes > MAX_STAGE_BYTES {
                 return Err(CommandError::new(
@@ -260,7 +260,11 @@ fn validated_manifest_relative(value: &str) -> CommandResult<PathBuf> {
         ));
     }
     let mut components = path.components();
-    if components.next().and_then(|value| value.as_os_str().to_str()) != Some("assets") {
+    if components
+        .next()
+        .and_then(|value| value.as_os_str().to_str())
+        != Some("assets")
+    {
         return Err(CommandError::new(
             "invalid_generation",
             "Generated files must be written under assets/",
@@ -418,11 +422,8 @@ mod tests {
         RgbaImage::from_pixel(16, 16, Rgba([1, 2, 3, 255]))
             .save(stage.path().join("assets/characters/good.png"))
             .expect("good image saves");
-        fs::write(
-            stage.path().join("assets/characters/bad.png"),
-            b"not-a-png",
-        )
-        .expect("invalid image writes");
+        fs::write(stage.path().join("assets/characters/bad.png"), b"not-a-png")
+            .expect("invalid image writes");
         let manifest = GenerationManifest {
             name: "rollback".into(),
             category: "characters".into(),
