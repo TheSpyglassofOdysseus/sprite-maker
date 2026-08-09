@@ -4,6 +4,7 @@ use crate::{
 };
 use image::ImageReader;
 use std::{
+    collections::HashSet,
     fs,
     path::{Component, Path, PathBuf},
 };
@@ -27,9 +28,7 @@ impl GenerationStage {
     ) -> CommandResult<Self> {
         let real_root = real_root.canonicalize()?;
         let stage_root = stage_path(workspace_id, conversation_id)?;
-        if stage_root.exists() {
-            fs::remove_dir_all(&stage_root)?;
-        }
+        remove_stage_path(&stage_root)?;
         fs::create_dir_all(&stage_root)?;
 
         let mut copied_bytes = 0_u64;
@@ -92,10 +91,18 @@ impl GenerationStage {
 
         let staged_assets = self.stage_root.join("assets").canonicalize()?;
         let real_assets = self.real_root.join("assets").canonicalize()?;
-        let mut promoted = Vec::with_capacity(manifest.files.len());
+        let mut seen_sources = HashSet::new();
+        let mut reserved_destinations = HashSet::new();
+        let mut plan = Vec::with_capacity(manifest.files.len());
 
         for relative in &manifest.files {
             let relative_path = validated_manifest_relative(relative)?;
+            if !seen_sources.insert(relative_path.clone()) {
+                return Err(CommandError::new(
+                    "invalid_generation",
+                    "Generation manifest contains the same output file more than once",
+                ));
+            }
             let staged = self.stage_root.join(&relative_path).canonicalize()?;
             if !staged.starts_with(&staged_assets) || !staged.is_file() {
                 return Err(CommandError::new(
@@ -106,46 +113,68 @@ impl GenerationStage {
             validate_generated_image(&staged)?;
 
             let requested = self.real_root.join(&relative_path);
-            let destination = unique_destination(&real_assets, &requested)?;
+            let destination = unique_destination(
+                &real_assets,
+                &requested,
+                &reserved_destinations,
+            )?;
+            reserved_destinations.insert(destination.clone());
+            let promoted_relative = destination
+                .strip_prefix(&self.real_root)
+                .map_err(|_| {
+                    CommandError::new(
+                        "invalid_generation",
+                        "Promoted file is outside the real workspace",
+                    )
+                })?
+                .to_string_lossy()
+                .replace('\\', "/");
+            plan.push((staged, destination, promoted_relative));
+        }
+
+        let mut copied = Vec::new();
+        for (staged, destination, _) in &plan {
             if let Some(parent) = destination.parent() {
                 fs::create_dir_all(parent)?;
             }
-            fs::copy(&staged, &destination)?;
-            let destination = destination.canonicalize()?;
-            if !destination.starts_with(&real_assets) {
-                let _ = fs::remove_file(&destination);
+            if let Err(error) = fs::copy(staged, destination) {
+                rollback_files(&copied);
+                return Err(error.into());
+            }
+            copied.push(destination.clone());
+            let canonical = match destination.canonicalize() {
+                Ok(path) => path,
+                Err(error) => {
+                    rollback_files(&copied);
+                    return Err(error.into());
+                }
+            };
+            if !canonical.starts_with(&real_assets) {
+                rollback_files(&copied);
                 return Err(CommandError::new(
                     "invalid_generation",
                     "Promoted file escaped the real workspace asset tree",
                 ));
             }
-            promoted.push(
-                destination
-                    .strip_prefix(&self.real_root)
-                    .map_err(|_| {
-                        CommandError::new(
-                            "invalid_generation",
-                            "Promoted file is outside the real workspace",
-                        )
-                    })?
-                    .to_string_lossy()
-                    .replace('\\', "/"),
-            );
         }
 
-        manifest.files = promoted;
+        manifest.files = plan
+            .iter()
+            .map(|(_, _, relative)| relative.clone())
+            .collect();
         let real_metadata = self.real_root.join(".sprite-studio");
         fs::create_dir_all(&real_metadata)?;
-        fs::write(
-            real_metadata.join("last-generation.json"),
-            serde_json::to_vec_pretty(&manifest)
-                .map_err(|error| CommandError::new("serialization_error", error.to_string()))?,
-        )?;
+        let encoded = serde_json::to_vec_pretty(&manifest)
+            .map_err(|error| CommandError::new("serialization_error", error.to_string()))?;
+        if let Err(error) = fs::write(real_metadata.join("last-generation.json"), encoded) {
+            rollback_files(&copied);
+            return Err(error.into());
+        }
         Ok(manifest)
     }
 
     pub fn cleanup(self) {
-        let _ = fs::remove_dir_all(self.stage_root);
+        let _ = remove_stage_path(&self.stage_root);
     }
 }
 
@@ -172,6 +201,18 @@ fn stage_path(workspace_id: &str, conversation_id: &str) -> CommandResult<PathBu
         .join(workspace_id)
         .join(conversation_id)
         .join("current"))
+}
+
+fn remove_stage_path(path: &Path) -> CommandResult<()> {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return Ok(());
+    };
+    if metadata.file_type().is_symlink() || metadata.is_file() {
+        fs::remove_file(path)?;
+    } else if metadata.is_dir() {
+        fs::remove_dir_all(path)?;
+    }
+    Ok(())
 }
 
 fn copy_tree(source: &Path, destination: &Path, copied_bytes: &mut u64) -> CommandResult<()> {
@@ -270,7 +311,11 @@ fn validate_generated_image(path: &Path) -> CommandResult<()> {
     Ok(())
 }
 
-fn unique_destination(assets_root: &Path, requested: &Path) -> CommandResult<PathBuf> {
+fn unique_destination(
+    assets_root: &Path,
+    requested: &Path,
+    reserved: &HashSet<PathBuf>,
+) -> CommandResult<PathBuf> {
     let parent = requested.parent().ok_or_else(|| {
         CommandError::new(
             "invalid_generation",
@@ -285,7 +330,7 @@ fn unique_destination(assets_root: &Path, requested: &Path) -> CommandResult<Pat
             "Generated destination resolves outside the real asset tree",
         ));
     }
-    if !requested.exists() {
+    if fs::symlink_metadata(requested).is_err() && !reserved.contains(requested) {
         return Ok(requested.to_path_buf());
     }
     let stem = requested
@@ -294,7 +339,7 @@ fn unique_destination(assets_root: &Path, requested: &Path) -> CommandResult<Pat
         .unwrap_or("sprite");
     for index in 2..10_000_u32 {
         let candidate = parent.join(format!("{stem}-{index}.png"));
-        if !candidate.exists() {
+        if fs::symlink_metadata(&candidate).is_err() && !reserved.contains(&candidate) {
             return Ok(candidate);
         }
     }
@@ -302,6 +347,12 @@ fn unique_destination(assets_root: &Path, requested: &Path) -> CommandResult<Pat
         "generation_name_exhausted",
         "Could not allocate a safe destination for generated output",
     ))
+}
+
+fn rollback_files(paths: &[PathBuf]) {
+    for path in paths.iter().rev() {
+        let _ = fs::remove_file(path);
+    }
 }
 
 #[cfg(test)]
@@ -353,6 +404,42 @@ mod tests {
         assert!(root.join("assets/characters/hero-2.png").is_file());
         let original = image::open(existing).expect("original reads").to_rgba8();
         assert_eq!(original.get_pixel(0, 0).0, [1, 2, 3, 255]);
+        stage.cleanup();
+        fs::remove_dir_all(root).expect("fixture should clean up");
+    }
+
+    #[test]
+    fn invalid_later_file_does_not_partially_promote_earlier_files() {
+        let root = std::env::temp_dir().join(format!("stage-rollback-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join("assets/characters")).expect("asset directory should exist");
+        fs::create_dir_all(root.join(".sprite-studio")).expect("metadata directory should exist");
+        let stage = GenerationStage::prepare(&root, "workspace-rollback", "conversation-rollback")
+            .expect("stage should prepare");
+        RgbaImage::from_pixel(16, 16, Rgba([1, 2, 3, 255]))
+            .save(stage.path().join("assets/characters/good.png"))
+            .expect("good image saves");
+        fs::write(
+            stage.path().join("assets/characters/bad.png"),
+            b"not-a-png",
+        )
+        .expect("invalid image writes");
+        let manifest = GenerationManifest {
+            name: "rollback".into(),
+            category: "characters".into(),
+            fps: 8.0,
+            files: vec![
+                "assets/characters/good.png".into(),
+                "assets/characters/bad.png".into(),
+            ],
+            generated_at: "2026-08-09T00:00:00Z".into(),
+        };
+        fs::write(
+            stage.path().join(".sprite-studio/last-generation.json"),
+            serde_json::to_vec_pretty(&manifest).expect("manifest serializes"),
+        )
+        .expect("manifest writes");
+        assert!(stage.promote().is_err());
+        assert!(!root.join("assets/characters/good.png").exists());
         stage.cleanup();
         fs::remove_dir_all(root).expect("fixture should clean up");
     }
