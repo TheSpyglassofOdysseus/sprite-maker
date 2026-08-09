@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "review/**"
+  pull_request:
   workflow_dispatch:
 
 permissions:
