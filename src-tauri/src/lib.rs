@@ -3,6 +3,7 @@ mod assets;
 mod conversations;
 mod database;
 mod error;
+mod generation_staging;
 mod jobs;
 mod models;
 mod motion_planner;
