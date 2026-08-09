@@ -1,6 +1,7 @@
 use crate::{
     conversations::{add_message, get_conversation, set_provider_session, update_message},
     error::{CommandError, CommandResult},
+    generation_staging::GenerationStage,
     models::{
         GenerationOptions, ProviderCapabilities, ProviderEvent, ProviderMode,
         ProviderRequestOptions, ProviderStatus,
@@ -111,7 +112,7 @@ pub fn detect_providers() -> Vec<ProviderStatus> {
         let (status, detail) = if id == "codex" && installed {
             (
                 "ready",
-                "Installed and available for real workspace conversations",
+                "Installed and available through isolated generation staging",
             )
         } else if id == "codex" {
             (
@@ -384,7 +385,7 @@ async fn run_codex(app: AppHandle, run: ProviderRun, mut cancel_rx: oneshot::Rec
         &request_id,
         &conversation_id,
         "started",
-        "Codex is working in this workspace",
+        "Codex is working in an isolated generation workspace",
     );
     let workspace = match workspace_path(&state, &workspace_id) {
         Ok(path) => path,
@@ -394,6 +395,23 @@ async fn run_codex(app: AppHandle, run: ProviderRun, mut cancel_rx: oneshot::Rec
             return;
         }
     };
+    let stage = match GenerationStage::prepare(&workspace, &workspace_id, &conversation_id) {
+        Ok(stage) => stage,
+        Err(error) => {
+            let message = format!("Could not prepare isolated generation staging: {}", error.message);
+            let _ = update_message(&state, &assistant_id, &message, "failed");
+            emit(&app, &request_id, &conversation_id, "failed", message);
+            return;
+        }
+    };
+    let staged_prompt = stage.rewrite_prompt(&prompt);
+    emit(
+        &app,
+        &request_id,
+        &conversation_id,
+        "activity",
+        "Prepared isolated copy of project assets and references",
+    );
     let arguments = codex_arguments(
         session_id.as_deref(),
         model.as_deref(),
@@ -401,7 +419,7 @@ async fn run_codex(app: AppHandle, run: ProviderRun, mut cancel_rx: oneshot::Rec
     );
     let mut child = match Command::new(executable)
         .args(&arguments)
-        .current_dir(workspace)
+        .current_dir(stage.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -417,7 +435,7 @@ async fn run_codex(app: AppHandle, run: ProviderRun, mut cancel_rx: oneshot::Rec
         }
     };
     if let Some(mut stdin) = child.stdin.take() {
-        if let Err(error) = stdin.write_all(prompt.as_bytes()).await {
+        if let Err(error) = stdin.write_all(staged_prompt.as_bytes()).await {
             let message = format!("Could not send the prompt to Codex: {error}");
             let _ = update_message(&state, &assistant_id, &message, "failed");
             emit(&app, &request_id, &conversation_id, "failed", message);
@@ -490,12 +508,41 @@ async fn run_codex(app: AppHandle, run: ProviderRun, mut cancel_rx: oneshot::Rec
             &request_id,
             &conversation_id,
             "cancelled",
-            "Request cancelled",
+            "Request cancelled; isolated staging was preserved for diagnosis",
         );
         return;
     }
     match status {
         Ok(exit) if exit.success() => {
+            let staged_manifest = stage.path().join(".sprite-studio/last-generation.json");
+            if staged_manifest.is_file() {
+                match stage.promote() {
+                    Ok(manifest) => {
+                        emit(
+                            &app,
+                            &request_id,
+                            &conversation_id,
+                            "activity",
+                            format!(
+                                "Validated and promoted {} generated file(s)",
+                                manifest.files.len()
+                            ),
+                        );
+                        stage.cleanup();
+                    }
+                    Err(error) => {
+                        let message = format!(
+                            "Codex completed, but staged output was rejected: {}",
+                            error.message
+                        );
+                        let _ = update_message(&state, &assistant_id, &message, "failed");
+                        emit(&app, &request_id, &conversation_id, "failed", message);
+                        return;
+                    }
+                }
+            } else {
+                stage.cleanup();
+            }
             if response.trim().is_empty() {
                 response = "Codex completed without returning a text response.".into();
             }
