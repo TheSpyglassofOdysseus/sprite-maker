@@ -4,7 +4,7 @@ use crate::{
     workspace::workspace_path,
     AppState,
 };
-use rusqlite::OptionalExtension;
+use rusqlite::{params, OptionalExtension};
 use std::path::{Path, PathBuf};
 use tauri::{Manager, State};
 
@@ -73,6 +73,7 @@ fn validated_sheet_path(root: &Path, path: &str) -> CommandResult<Option<PathBuf
 #[tauri::command]
 pub fn list_sprite_sheets_safe(
     project_id: String,
+    worktree_id: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> CommandResult<Vec<SpriteSheet>> {
@@ -82,12 +83,21 @@ pub fn list_sprite_sheets_safe(
             .db
             .lock()
             .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
-        let mut statement = connection.prepare(&format!(
-            "{} WHERE project_id=?1 ORDER BY updated_at DESC",
-            select_sheet()
-        ))?;
-        let rows = statement.query_map([&project_id], sheet_row)?;
-        rows.filter_map(Result::ok).collect()
+        if let Some(worktree_id) = worktree_id {
+            let mut statement = connection.prepare(&format!(
+                "{} WHERE project_id=?1 AND worktree_id=?2 ORDER BY updated_at DESC",
+                select_sheet()
+            ))?;
+            let rows = statement.query_map(params![project_id, worktree_id], sheet_row)?;
+            rows.filter_map(Result::ok).collect()
+        } else {
+            let mut statement = connection.prepare(&format!(
+                "{} WHERE project_id=?1 ORDER BY updated_at DESC",
+                select_sheet()
+            ))?;
+            let rows = statement.query_map([project_id], sheet_row)?;
+            rows.filter_map(Result::ok).collect()
+        }
     };
 
     for sheet in &sheets {
