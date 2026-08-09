@@ -3,6 +3,7 @@ mod assets;
 mod conversations;
 mod database;
 mod error;
+mod generation_staging;
 mod jobs;
 mod models;
 mod motion_planner;
@@ -10,6 +11,7 @@ mod providers;
 mod quality;
 mod references;
 mod safe_assets;
+mod safe_provider;
 mod safe_references;
 mod settings;
 mod sprite_harness;
@@ -62,9 +64,9 @@ pub fn run() {
             conversations::delete_conversation,
             conversations::list_messages,
             conversations::update_message_metadata,
-            providers::detect_providers,
-            providers::start_provider_message,
-            providers::cancel_provider_request,
+            safe_provider::detect_providers,
+            safe_provider::start_provider_message,
+            safe_provider::cancel_provider_request,
             motion_planner::plan_motion,
             safe_references::list_reference_images,
             safe_references::import_reference_image,
