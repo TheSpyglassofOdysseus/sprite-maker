@@ -16,8 +16,18 @@ jobs:
     name: Frontend and Rust quality gates
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - name: Check out exact source revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          git init .
+          git remote add origin "https://github.com/${REPOSITORY}.git"
+          TARGET_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
+          git fetch --depth=1 origin "$TARGET_SHA"
+          git checkout --detach FETCH_HEAD
+          echo "Testing commit $(git rev-parse HEAD)"
 
       - name: Configure Rust toolchain
         run: |
