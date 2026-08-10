@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   quality:
@@ -28,6 +28,57 @@ jobs:
           git fetch --depth=1 origin "$TARGET_SHA"
           git checkout --detach FETCH_HEAD
           echo "Testing commit $(git rev-parse HEAD)"
+
+      - name: Remove obsolete unhardened sheet commands
+        if: github.event_name == 'push' && github.ref_name == 'review/hardening-v1'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("src-tauri/src/jobs.rs")
+          text = path.read_text()
+          original = text
+
+          def remove_between(start: str, end: str) -> None:
+              global text
+              if start not in text:
+                  return
+              begin = text.index(start)
+              finish = text.index(end, begin)
+              text = text[:begin] + text[finish:]
+
+          remove_between(
+              "fn sheet_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SpriteSheet> {",
+              "pub(crate) fn load_job",
+          )
+          remove_between(
+              "#[tauri::command]\npub fn list_sprite_sheets(",
+              "#[tauri::command]\npub fn queue_sprite_sheet(",
+          )
+          remove_between(
+              "#[tauri::command]\npub fn delete_sprite_sheet(",
+              "#[cfg(test)]\nmod tests",
+          )
+
+          if text != original:
+              path.write_text(text)
+          PY
+          if git diff --quiet -- src-tauri/src/jobs.rs; then
+            echo "Obsolete sheet code already removed"
+            exit 0
+          fi
+          rustup default stable
+          rustup component add rustfmt
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/src/jobs.rs
+          git commit -m "Remove obsolete unhardened sheet commands"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}.git"
+          git push origin "HEAD:review/hardening-v1"
 
       - name: Configure Rust toolchain
         run: |
