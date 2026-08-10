@@ -6,6 +6,19 @@ export const GENERATION_PRESETS: Record<Exclude<GenerationQuality, "custom">, Pi
   high: { width: 128, height: 128, frames: 8, fps: 12 },
 };
 
+export const PITFALL_ETERNAL_PROFILE: Pick<ChatGenerationProfile, "quality" | "width" | "height" | "frames" | "fps" | "frameMode" | "minFrames" | "maxFrames" | "allowInterpolation" | "allowAutoAdjust"> = {
+  quality: "custom",
+  width: 64,
+  height: 64,
+  frames: 8,
+  fps: 12,
+  frameMode: "fixed",
+  minFrames: 8,
+  maxFrames: 8,
+  allowInterpolation: false,
+  allowAutoAdjust: false,
+};
+
 export const SLASH_COMMANDS: { id: SpriteSlashCommand; label: string; description: string }[] = [
   { id: "animate", label: "/animate", description: "Generate a looping animation using this chat's frame settings" },
   { id: "sprite", label: "/sprite", description: "Generate one polished static sprite" },
@@ -20,6 +33,13 @@ const bounded = (value: unknown, fallback: number, minimum: number, maximum: num
 
 export function profileForQuality(quality: Exclude<GenerationQuality, "custom">, current?: ChatGenerationProfile): ChatGenerationProfile {
   return { quality, ...GENERATION_PRESETS[quality], frameMode: current?.frameMode ?? "fixed", minFrames: current?.minFrames ?? 4, maxFrames: current?.maxFrames ?? 12, allowInterpolation: current?.allowInterpolation ?? false, allowAutoAdjust: current?.allowAutoAdjust ?? false, model: current?.model ?? "", reasoningEffort: current?.reasoningEffort ?? "" };
+}
+
+export function pitfallEternalProfile(current: ChatGenerationProfile): ChatGenerationProfile {
+  return {
+    ...current,
+    ...PITFALL_ETERNAL_PROFILE,
+  };
 }
 
 export function normalizeGenerationProfile(value: unknown, modes: ProviderMode[] = []): ChatGenerationProfile {
