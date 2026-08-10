@@ -1,10 +1,12 @@
 name: Dependency lock refresh
 
 on:
+  push:
+    branches: ["agent/hardening-and-godot-v1"]
   pull_request:
 
 concurrency:
-  group: dependency-lock-refresh-${{ github.event.pull_request.number }}
+  group: dependency-lock-refresh-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -18,14 +20,18 @@ jobs:
       - name: Check out exact review head
         env:
           REPOSITORY: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          HEAD_BRANCH: ${{ github.head_ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_BRANCH: ${{ github.head_ref }}
+          EVENT_BRANCH: ${{ github.ref_name }}
         run: |
           git init .
           git remote add origin "https://github.com/${REPOSITORY}.git"
+          HEAD_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
+          HEAD_BRANCH="${PR_HEAD_BRANCH:-$EVENT_BRANCH}"
           git fetch --depth=1 origin "$HEAD_SHA"
           git checkout -B "$HEAD_BRANCH" FETCH_HEAD
-          echo "Refreshing dependencies at $(git rev-parse HEAD)"
+          echo "Refreshing dependencies at $(git rev-parse HEAD) on $HEAD_BRANCH"
       - name: Regenerate Bun lockfile and audit JavaScript dependencies
         run: |
           npm install --global bun
@@ -41,8 +47,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          HEAD_BRANCH: ${{ github.head_ref }}
+          PR_HEAD_BRANCH: ${{ github.head_ref }}
+          EVENT_BRANCH: ${{ github.ref_name }}
         run: |
+          HEAD_BRANCH="${PR_HEAD_BRANCH:-$EVENT_BRANCH}"
           if git diff --quiet -- bun.lock; then
             echo "bun.lock already matches the audited dependency graph"
             exit 0
