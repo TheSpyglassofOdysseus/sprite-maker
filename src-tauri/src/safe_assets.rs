@@ -18,7 +18,12 @@ const MAX_GENERATION_FILES: usize = 64;
 fn valid_extension(path: &Path) -> bool {
     path.extension()
         .and_then(|value| value.to_str())
-        .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp"))
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp"
+            )
+        })
 }
 
 fn safe_category(category: &str) -> CommandResult<String> {
@@ -39,7 +44,14 @@ fn canonical_assets_root(root: &Path) -> CommandResult<PathBuf> {
     let root = root.canonicalize()?;
     let assets = root.join("assets");
     std::fs::create_dir_all(&assets)?;
-    Ok(assets.canonicalize()?)
+    let assets = assets.canonicalize()?;
+    if !assets.starts_with(&root) {
+        return Err(CommandError::new(
+            "asset_root_outside_workspace",
+            "The assets directory resolves outside this workspace",
+        ));
+    }
+    Ok(assets)
 }
 
 fn canonical_asset_path(root: &Path, path: &Path) -> CommandResult<PathBuf> {
@@ -57,7 +69,10 @@ fn canonical_asset_path(root: &Path, path: &Path) -> CommandResult<PathBuf> {
 fn validate_image(path: &Path) -> CommandResult<(u32, u32, u64)> {
     let metadata = std::fs::metadata(path)?;
     if !metadata.is_file() {
-        return Err(CommandError::new("asset_missing", "Image is not a regular file"));
+        return Err(CommandError::new(
+            "asset_missing",
+            "Image is not a regular file",
+        ));
     }
     if metadata.len() > MAX_IMAGE_FILE_BYTES {
         return Err(CommandError::new(
@@ -129,7 +144,10 @@ fn safe_manifest_relative(value: &str) -> CommandResult<PathBuf> {
         .next()
         .and_then(|value| value.as_os_str().to_str())
         .unwrap_or("");
-    if !matches!(category, "characters" | "creatures" | "terrain" | "props" | "effects") {
+    if !matches!(
+        category,
+        "characters" | "creatures" | "terrain" | "props" | "effects"
+    ) {
         return Err(CommandError::new(
             "invalid_generation",
             "Generated files must use a supported asset category",
@@ -184,7 +202,8 @@ pub fn scan_assets(
             .db
             .lock()
             .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
-        let mut statement = connection.prepare("SELECT id, path FROM assets WHERE workspace_id = ?1")?;
+        let mut statement =
+            connection.prepare("SELECT id, path FROM assets WHERE workspace_id = ?1")?;
         let registered = statement.query_map([&workspace_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -210,6 +229,7 @@ pub fn import_asset(
     state: State<'_, AppState>,
 ) -> CommandResult<Asset> {
     let root = workspace_path(&state, &workspace_id)?;
+    canonical_assets_root(&root)?;
     let source = PathBuf::from(source_path);
     if std::fs::symlink_metadata(&source)
         .map(|metadata| metadata.file_type().is_symlink())
@@ -231,8 +251,21 @@ pub fn import_asset(
     let directory = root.join("assets").join(&category);
     std::fs::create_dir_all(&directory)?;
     let directory = directory.canonicalize()?;
-    let stem = source.file_stem().and_then(|value| value.to_str()).unwrap_or("asset");
-    let extension = source.extension().and_then(|value| value.to_str()).unwrap_or("png");
+    let assets_root = canonical_assets_root(&root)?;
+    if !directory.starts_with(&assets_root) {
+        return Err(CommandError::new(
+            "asset_outside_workspace",
+            "Asset category directory resolves outside this workspace",
+        ));
+    }
+    let stem = source
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("asset");
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("png");
     let mut destination = directory.join(format!("{stem}.{extension}"));
     let mut version = 2_u32;
     while destination.exists() || std::fs::symlink_metadata(&destination).is_ok() {
@@ -271,7 +304,10 @@ pub fn rename_asset(id: String, name: String, state: State<'_, AppState>) -> Com
     };
     let root = workspace_path(&state, &workspace_id)?;
     let old_path = canonical_asset_path(&root, Path::new(&old_path))?;
-    let extension = old_path.extension().and_then(|value| value.to_str()).unwrap_or("png");
+    let extension = old_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("png");
     let new_path = old_path.with_file_name(format!("{name}.{extension}"));
     if new_path.exists() || std::fs::symlink_metadata(&new_path).is_ok() {
         return Err(CommandError::new(
@@ -326,10 +362,19 @@ pub fn export_asset(id: String, state: State<'_, AppState>) -> CommandResult<Exp
     let slug: String = asset
         .name
         .chars()
-        .map(|value| if value.is_ascii_alphanumeric() { value.to_ascii_lowercase() } else { '-' })
+        .map(|value| {
+            if value.is_ascii_alphanumeric() {
+                value.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect();
     let slug = slug.trim_matches('-');
-    let extension = source.extension().and_then(|value| value.to_str()).unwrap_or("png");
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("png");
     let image_path = output_directory.join(format!("{slug}.{extension}"));
     let metadata_path = output_directory.join(format!("{slug}.json"));
     std::fs::copy(&source, &image_path)?;
@@ -383,12 +428,30 @@ pub fn get_generation_manifest(
 
 #[cfg(test)]
 mod tests {
-    use super::safe_manifest_relative;
+    use super::{canonical_assets_root, safe_manifest_relative};
+    use std::fs;
+    use uuid::Uuid;
 
     #[test]
     fn manifest_paths_reject_escape() {
         assert!(safe_manifest_relative("../outside.png").is_err());
         assert!(safe_manifest_relative("exports/frame.png").is_err());
         assert!(safe_manifest_relative("assets/characters/frame.png").is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_assets_root_cannot_escape_workspace() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!("asset-root-{}", Uuid::new_v4()));
+        let outside = std::env::temp_dir().join(format!("asset-outside-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("root creates");
+        fs::create_dir_all(&outside).expect("outside creates");
+        symlink(&outside, root.join("assets")).expect("assets link creates");
+        assert!(canonical_assets_root(&root).is_err());
+        fs::remove_file(root.join("assets")).expect("link removes");
+        fs::remove_dir_all(root).expect("root cleans");
+        fs::remove_dir_all(outside).expect("outside cleans");
     }
 }
