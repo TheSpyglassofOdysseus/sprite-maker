@@ -91,6 +91,7 @@ pub fn export_godot_animation(
     }
 
     let slug = slugify(&animation.name);
+    let explicit_destination = destination.is_some();
     let output_directory = if let Some(path) = destination {
         PathBuf::from(path)
     } else {
@@ -101,9 +102,13 @@ pub fn export_godot_animation(
     let png_path = output_directory.join(format!("{slug}.png"));
     let sprite_frames_path = output_directory.join(format!("{slug}_sprite_frames.tres"));
     let metadata_path = output_directory.join(format!("{slug}.godot.json"));
-    sheet.save(&png_path)?;
 
-    let godot_texture_path = godot_texture_path(&output_directory, &png_path);
+    let godot_texture_path = godot_texture_path(
+        &output_directory,
+        &png_path,
+        explicit_destination,
+    )?;
+    sheet.save(&png_path)?;
     let tres = sprite_frames_resource(
         &animation.name,
         animation.fps,
@@ -190,23 +195,47 @@ fn slugify(value: &str) -> String {
     }
 }
 
-fn godot_texture_path(output_directory: &Path, png_path: &Path) -> String {
-    let mut cursor = Some(output_directory);
+fn find_godot_project_root(start: &Path) -> Option<PathBuf> {
+    let mut cursor = Some(start);
     while let Some(directory) = cursor {
         if directory.join("project.godot").is_file() {
-            if let Ok(relative) = png_path.strip_prefix(directory) {
-                return format!("res://{}", relative.to_string_lossy().replace('\\', "/"));
-            }
+            return Some(directory.to_path_buf());
         }
         cursor = directory.parent();
     }
-    format!(
+    None
+}
+
+fn godot_texture_path(
+    output_directory: &Path,
+    png_path: &Path,
+    require_project_root: bool,
+) -> CommandResult<String> {
+    if let Some(project_root) = find_godot_project_root(output_directory) {
+        let relative = png_path.strip_prefix(&project_root).map_err(|_| {
+            CommandError::new(
+                "godot_export_path_error",
+                "Could not resolve the exported texture relative to the Godot project",
+            )
+        })?;
+        return Ok(format!(
+            "res://{}",
+            relative.to_string_lossy().replace('\\', "/")
+        ));
+    }
+    if require_project_root {
+        return Err(CommandError::new(
+            "godot_project_not_found",
+            "Choose a folder inside a Godot project containing project.godot",
+        ));
+    }
+    Ok(format!(
         "res://{}",
         png_path
             .file_name()
             .and_then(|value| value.to_str())
             .unwrap_or("spritesheet.png")
-    )
+    ))
 }
 
 fn duration_factor(duration_ms: u32, fps: f64) -> f64 {
@@ -266,7 +295,8 @@ fn sprite_frames_resource(
 mod tests {
     use super::{duration_factor, godot_texture_path, sprite_frames_resource};
     use crate::models::AnimationFrame;
-    use std::fs;
+    use image::{Rgba, RgbaImage};
+    use std::{fs, process::Command};
     use uuid::Uuid;
 
     #[test]
@@ -283,7 +313,21 @@ mod tests {
         fs::write(root.join("project.godot"), "[application]").expect("project marker writes");
         let png = output.join("hero.png");
         fs::write(&png, []).expect("png placeholder writes");
-        assert_eq!(godot_texture_path(&output, &png), "res://art/hero/hero.png");
+        assert_eq!(
+            godot_texture_path(&output, &png, true).expect("Godot path should resolve"),
+            "res://art/hero/hero.png"
+        );
+        fs::remove_dir_all(root).expect("fixture cleans");
+    }
+
+    #[test]
+    fn explicit_export_rejects_non_godot_destination() {
+        let root = std::env::temp_dir().join(format!("godot-export-invalid-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("output should exist");
+        let png = root.join("hero.png");
+        let error = godot_texture_path(&root, &png, true)
+            .expect_err("explicit export outside a Godot project must fail");
+        assert_eq!(error.code, "godot_project_not_found");
         fs::remove_dir_all(root).expect("fixture cleans");
     }
 
@@ -304,5 +348,87 @@ mod tests {
         assert!(resource.contains("AtlasTexture_1"));
         assert!(resource.contains("\"duration\": 2.000"));
         assert!(resource.contains("\"loop\": true"));
+    }
+
+    #[test]
+    #[ignore = "requires GODOT_BIN pointing to a Godot 4 executable"]
+    fn godot_engine_loads_emitted_spriteframes_resource() {
+        let godot = std::env::var("GODOT_BIN").expect("GODOT_BIN must be set");
+        let root = std::env::temp_dir().join(format!("godot-engine-smoke-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("project directory should exist");
+        fs::write(
+            root.join("project.godot"),
+            "[application]\nconfig/name=\"Sprite Studio Godot Export Smoke\"\n[rendering]\nrenderer/rendering_method=\"gl_compatibility\"\n",
+        )
+        .expect("project.godot writes");
+
+        RgbaImage::from_pixel(32, 16, Rgba([255, 255, 255, 255]))
+            .save(root.join("hero.png"))
+            .expect("fixture spritesheet saves");
+        let frames = vec![
+            AnimationFrame {
+                asset_id: "a".into(),
+                duration_ms: Some(125),
+            },
+            AnimationFrame {
+                asset_id: "b".into(),
+                duration_ms: Some(250),
+            },
+        ];
+        fs::write(
+            root.join("hero_sprite_frames.tres"),
+            sprite_frames_resource("run", 8.0, true, 16, 16, &frames, "res://hero.png"),
+        )
+        .expect("SpriteFrames resource writes");
+        fs::write(
+            root.join("validate.gd"),
+            r#"extends SceneTree
+
+func _initialize():
+    var frames = load("res://hero_sprite_frames.tres")
+    if frames == null or not frames is SpriteFrames:
+        push_error("SpriteFrames resource failed to load")
+        quit(10)
+        return
+    if not frames.has_animation(&"run"):
+        push_error("run animation missing")
+        quit(11)
+        return
+    if frames.get_frame_count(&"run") != 2:
+        push_error("frame count mismatch")
+        quit(12)
+        return
+    if abs(frames.get_animation_speed(&"run") - 8.0) > 0.001:
+        push_error("FPS mismatch")
+        quit(13)
+        return
+    if abs(frames.get_frame_duration(&"run", 1) - 2.0) > 0.001:
+        push_error("duration factor mismatch")
+        quit(14)
+        return
+    quit(0)
+"#,
+        )
+        .expect("validation script writes");
+
+        let import = Command::new(&godot)
+            .args(["--headless", "--editor", "--path"])
+            .arg(&root)
+            .arg("--quit")
+            .status()
+            .expect("Godot import process should start");
+        assert!(import.success(), "Godot project import failed: {import}");
+
+        let validation = Command::new(&godot)
+            .args(["--headless", "--path"])
+            .arg(&root)
+            .args(["--script", "validate.gd"])
+            .status()
+            .expect("Godot validation process should start");
+        assert!(
+            validation.success(),
+            "Godot rejected the emitted SpriteFrames resource: {validation}"
+        );
+        fs::remove_dir_all(root).expect("fixture cleans");
     }
 }
