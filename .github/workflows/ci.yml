@@ -10,8 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
-  issues: write
+  contents: write
 
 jobs:
   frontend:
@@ -77,11 +76,10 @@ jobs:
             git diff --stat -- src-tauri
           fi
       - name: Run Rust tests
-        id: rust_tests
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_BRANCH: ${{ github.head_ref }}
         run: |
           set -o pipefail
           set +e
@@ -89,15 +87,21 @@ jobs:
           status=${PIPESTATUS[0]}
           set -e
           if [ "$status" -ne 0 ]; then
-            tail -n 180 /tmp/cargo-test.log > /tmp/cargo-test-tail.log
+            mkdir -p .ci
             {
-              echo "Native CI failed on commit \`${{ github.event.pull_request.head.sha }}\`."
+              echo "Native CI failure for commit ${{ github.event.pull_request.head.sha }}"
               echo
-              echo '```text'
-              cat /tmp/cargo-test-tail.log
-              echo '```'
-            } > /tmp/pr-comment.md
-            gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --method POST -f "body=$(cat /tmp/pr-comment.md)" || true
+              tail -n 220 /tmp/cargo-test.log
+            } > .ci/native-failure.log
+            git checkout -- . ':!src-tauri' || true
+            cargo fmt --manifest-path src-tauri/Cargo.toml --all || true
+            git restore src-tauri || true
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .ci/native-failure.log
+            git commit -m "Record native CI failure diagnostics [skip ci]"
+            git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}.git"
+            git push origin "HEAD:${HEAD_BRANCH}"
             exit "$status"
           fi
       - name: Run Clippy
