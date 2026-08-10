@@ -1,178 +1,195 @@
-name: Final Rust source normalization
+name: Release validation
 
 on:
   push:
-    branches: ["agent/hardening-and-godot-v1"]
+    branches: [main]
   pull_request:
 
 concurrency:
-  group: final-rust-source-normalization
+  group: release-validation-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  normalize:
+  frontend:
+    name: Frontend checks
     runs-on: ubuntu-latest
     steps:
-      - name: Check out review branch
+      - name: Check out exact revision
         env:
           REPOSITORY: ${{ github.repository }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           EVENT_SHA: ${{ github.sha }}
-          PR_HEAD_BRANCH: ${{ github.head_ref }}
-          EVENT_BRANCH: ${{ github.ref_name }}
         run: |
           git init .
           git remote add origin "https://github.com/${REPOSITORY}.git"
-          HEAD_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
-          BRANCH="${PR_HEAD_BRANCH:-$EVENT_BRANCH}"
-          git fetch --depth=1 origin "$HEAD_SHA"
-          git checkout -B "$BRANCH" FETCH_HEAD
-
-      - name: Harden shared get_asset and add regression test
+          TARGET_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
+          git fetch --depth=1 origin "$TARGET_SHA"
+          git checkout --detach FETCH_HEAD
+          echo "Testing $(git rev-parse HEAD)"
+      - name: Install Bun
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
+          npm install --global bun
+          bun --version
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run build
 
-          path = Path("src-tauri/src/assets.rs")
-          text = path.read_text()
-          old = '''pub fn get_asset(state: &AppState, id: &str) -> CommandResult<Asset> {
-    let connection = state
-        .db
-        .lock()
-        .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
-    connection.query_row(
-        "SELECT id, workspace_id, name, path, relative_path, category, format, width, height, file_size, has_alpha, created_at FROM assets WHERE id = ?1",
-        [id], asset_row,
-    ).optional()?.ok_or_else(|| CommandError::new("asset_not_found", "Asset no longer exists"))
-}
-'''
-          new = '''pub fn get_asset(state: &AppState, id: &str) -> CommandResult<Asset> {
-    let mut asset = {
-        let connection = state
-            .db
-            .lock()
-            .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
-        connection
-            .query_row(
-                "SELECT id, workspace_id, name, path, relative_path, category, format, width, height, file_size, has_alpha, created_at FROM assets WHERE id = ?1",
-                [id],
-                asset_row,
-            )
-            .optional()?
-            .ok_or_else(|| CommandError::new("asset_not_found", "Asset no longer exists"))?
-    };
-    let root = workspace_path(state, &asset.workspace_id)?.canonicalize()?;
-    let assets_root = root.join("assets").canonicalize()?;
-    if !assets_root.starts_with(&root) {
-        return Err(CommandError::new(
-            "asset_root_outside_workspace",
-            "The assets directory resolves outside this workspace",
-        ));
-    }
-    let candidate = PathBuf::from(&asset.path).canonicalize()?;
-    if !candidate.starts_with(&assets_root) || !candidate.is_file() {
-        return Err(CommandError::new(
-            "asset_outside_workspace",
-            "Stored asset path resolves outside this workspace",
-        ));
-    }
-    asset.path = candidate.to_string_lossy().into_owned();
-    Ok(asset)
-}
-'''
-          if old not in text:
-              if "Stored asset path resolves outside this workspace" not in text:
-                  raise SystemExit("Expected get_asset implementation not found")
-          else:
-              path.write_text(text.replace(old, new, 1))
+  security:
+    name: Dependency security audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          git init .
+          git remote add origin "https://github.com/${REPOSITORY}.git"
+          TARGET_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
+          git fetch --depth=1 origin "$TARGET_SHA"
+          git checkout --detach FETCH_HEAD
+          echo "Auditing $(git rev-parse HEAD)"
+      - name: Audit JavaScript dependencies
+        run: |
+          npm install --global bun
+          bun install --frozen-lockfile
+          bun audit
+      - name: Audit Rust dependencies with RustSec
+        run: |
+          rustup default stable
+          cargo install cargo-audit --locked
+          cd src-tauri
+          cargo audit
 
-          lib = Path("src-tauri/src/lib.rs")
-          lib_text = lib.read_text()
-          marker = "mod worktrees;\n"
-          if "mod use_time_asset_tests;" not in lib_text:
-              lib_text = lib_text.replace(marker, marker + "#[cfg(test)]\nmod use_time_asset_tests;\n", 1)
-              lib.write_text(lib_text)
-          PY
-          cat > src-tauri/src/use_time_asset_tests.rs <<'RS'
-          #[cfg(unix)]
-          #[test]
-          fn shared_asset_lookup_rejects_post_scan_symlink_escape() {
-              use crate::{
-                  assets::{get_asset, inspect, upsert},
-                  database, AppState,
-              };
-              use image::{Rgba, RgbaImage};
-              use std::{collections::HashMap, os::unix::fs::symlink, sync::Mutex};
-              use uuid::Uuid;
-
-              let root = std::env::temp_dir().join(format!("sprite-studio-use-time-{}", Uuid::new_v4()));
-              let outside = std::env::temp_dir().join(format!("sprite-studio-use-time-outside-{}", Uuid::new_v4()));
-              std::fs::create_dir_all(root.join("assets/characters")).expect("asset tree creates");
-              std::fs::create_dir_all(&outside).expect("outside tree creates");
-              let connection = database::open(&root.join("app.sqlite3")).expect("database opens");
-              connection
-                  .execute(
-                      "INSERT INTO projects(id,name,path,created_at,last_opened_at) VALUES ('project','Test',?1,'now','now')",
-                      [root.to_string_lossy().as_ref()],
-                  )
-                  .expect("project registers");
-              let state = AppState {
-                  db: Mutex::new(connection),
-                  cancellers: Mutex::new(HashMap::new()),
-              };
-
-              let path = root.join("assets/characters/hero.png");
-              RgbaImage::from_pixel(8, 8, Rgba([255, 0, 0, 255]))
-                  .save(&path)
-                  .expect("asset saves");
-              let asset = inspect("project", &root, &path, None).expect("asset inspects");
-              upsert(&state, &asset, "scanned").expect("asset indexes");
-              assert!(get_asset(&state, &asset.id).is_ok());
-
-              let outside_image = outside.join("outside.png");
-              RgbaImage::from_pixel(8, 8, Rgba([0, 255, 0, 255]))
-                  .save(&outside_image)
-                  .expect("outside image saves");
-              std::fs::remove_file(&path).expect("original removes");
-              symlink(&outside_image, &path).expect("replacement symlink creates");
-              let error = get_asset(&state, &asset.id).expect_err("escaped replacement must be rejected");
-              assert_eq!(error.code, "asset_outside_workspace");
-
-              drop(state);
-              std::fs::remove_file(path).expect("symlink removes");
-              std::fs::remove_dir_all(root).expect("root cleans");
-              std::fs::remove_dir_all(outside).expect("outside cleans");
-          }
-          RS
-
-      - name: Format and validate Rust
+  native:
+    name: Rust tests and Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          git init .
+          git remote add origin "https://github.com/${REPOSITORY}.git"
+          TARGET_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
+          git fetch --depth=1 origin "$TARGET_SHA"
+          git checkout --detach FETCH_HEAD
+          echo "Testing $(git rev-parse HEAD)"
+      - name: Configure Rust
         run: |
           rustup default stable
           rustup component add rustfmt clippy
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
-          cargo fmt --manifest-path src-tauri/Cargo.toml --all
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
-          cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-
-      - name: Commit validated source normalization
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          PR_HEAD_BRANCH: ${{ github.head_ref }}
-          EVENT_BRANCH: ${{ github.ref_name }}
+          rustc --version
+          cargo --version
+      - name: Install Tauri Linux dependencies
         run: |
-          BRANCH="${PR_HEAD_BRANCH:-$EVENT_BRANCH}"
-          if git diff --quiet -- src-tauri; then
-            echo "No Rust normalization changes"
-            exit 0
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+      - name: Normalize formatting in validation checkout
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all
+          if ! git diff --quiet -- src-tauri; then
+            echo "::warning::Rust formatting drift remains in the reviewed source; validation continues against rustfmt-normalized source."
+            git diff --stat -- src-tauri
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src-tauri
-          git commit -m "Harden use-time asset lookup and apply rustfmt [skip ci]"
-          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}.git"
-          git push origin "HEAD:${BRANCH}"
+      - name: Run Rust tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
+      - name: Run Clippy
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+  godot-export:
+    name: Godot 4.7.1 SpriteFrames load test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          git init .
+          git remote add origin "https://github.com/${REPOSITORY}.git"
+          TARGET_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
+          git fetch --depth=1 origin "$TARGET_SHA"
+          git checkout --detach FETCH_HEAD
+          echo "Testing Godot export at $(git rev-parse HEAD)"
+      - name: Configure Rust and native dependencies
+        run: |
+          rustup default stable
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            unzip
+      - name: Download and verify official Godot 4.7.1 stable
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/godot
+          release_json=$(curl -fsSL "https://api.github.com/repos/godotengine/godot-builds/releases/tags/4.7.1-stable")
+          asset=$(printf '%s' "$release_json" | jq -c '.assets[] | select(.name == "Godot_v4.7.1-stable_linux.x86_64.zip")')
+          test -n "$asset"
+          zip_url=$(printf '%s' "$asset" | jq -r '.browser_download_url')
+          digest=$(printf '%s' "$asset" | jq -r '.digest')
+          test -n "$zip_url" && test "$zip_url" != "null"
+          case "$digest" in sha256:*) ;; *) echo "Missing SHA-256 digest for Godot release asset" >&2; exit 1;; esac
+          curl -fL "$zip_url" -o /tmp/godot/godot.zip
+          expected=${digest#sha256:}
+          echo "$expected  /tmp/godot/godot.zip" | sha256sum -c -
+          cd /tmp/godot
+          unzip -q godot.zip
+          chmod +x Godot_v4.7.1-stable_linux.x86_64
+          ./Godot_v4.7.1-stable_linux.x86_64 --version
+      - name: Load emitted SpriteFrames with Godot
+        env:
+          GODOT_BIN: /tmp/godot/Godot_v4.7.1-stable_linux.x86_64
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml godot_engine_loads_emitted_spriteframes_resource -- --ignored --nocapture
+
+  windows-bundle:
+    name: Windows installer smoke build
+    runs-on: windows-latest
+    steps:
+      - name: Check out exact revision
+        shell: pwsh
+        env:
+          REPOSITORY: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          git init .
+          git remote add origin "https://github.com/$env:REPOSITORY.git"
+          $target = if ($env:PR_HEAD_SHA) { $env:PR_HEAD_SHA } else { $env:EVENT_SHA }
+          git fetch --depth=1 origin $target
+          git checkout --detach FETCH_HEAD
+          git rev-parse HEAD
+      - name: Configure Rust
+        shell: pwsh
+        run: |
+          rustup default stable
+          rustc --version
+          cargo --version
+      - name: Install Bun
+        shell: pwsh
+        run: |
+          npm install --global bun
+          bun --version
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run tauri build
+      - name: Record Windows installers
+        shell: pwsh
+        run: |
+          $installers = Get-ChildItem -Recurse src-tauri/target/release/bundle -File | Where-Object { $_.Extension -in '.exe','.msi' }
+          if (-not $installers) { throw "No Windows installer was produced" }
+          $installers | ForEach-Object { Write-Host $_.FullName }
