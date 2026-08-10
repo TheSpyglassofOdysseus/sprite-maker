@@ -3,6 +3,7 @@ name: Final Rust source normalization
 on:
   push:
     branches: ["agent/hardening-and-godot-v1"]
+  pull_request:
 
 concurrency:
   group: final-rust-source-normalization
@@ -18,11 +19,16 @@ jobs:
       - name: Check out review branch
         env:
           REPOSITORY: ${{ github.repository }}
-          BRANCH: ${{ github.ref_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_BRANCH: ${{ github.head_ref }}
+          EVENT_BRANCH: ${{ github.ref_name }}
         run: |
           git init .
           git remote add origin "https://github.com/${REPOSITORY}.git"
-          git fetch --depth=1 origin "$BRANCH"
+          HEAD_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
+          BRANCH="${PR_HEAD_BRANCH:-$EVENT_BRANCH}"
+          git fetch --depth=1 origin "$HEAD_SHA"
           git checkout -B "$BRANCH" FETCH_HEAD
 
       - name: Harden shared get_asset and add regression test
@@ -78,8 +84,10 @@ jobs:
 }
 '''
           if old not in text:
-              raise SystemExit("Expected get_asset implementation not found")
-          path.write_text(text.replace(old, new, 1))
+              if "Stored asset path resolves outside this workspace" not in text:
+                  raise SystemExit("Expected get_asset implementation not found")
+          else:
+              path.write_text(text.replace(old, new, 1))
 
           lib = Path("src-tauri/src/lib.rs")
           lib_text = lib.read_text()
@@ -154,8 +162,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          BRANCH: ${{ github.ref_name }}
+          PR_HEAD_BRANCH: ${{ github.head_ref }}
+          EVENT_BRANCH: ${{ github.ref_name }}
         run: |
+          BRANCH="${PR_HEAD_BRANCH:-$EVENT_BRANCH}"
           if git diff --quiet -- src-tauri; then
             echo "No Rust normalization changes"
             exit 0
