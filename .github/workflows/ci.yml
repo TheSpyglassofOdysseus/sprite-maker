@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   quality:
@@ -28,30 +28,6 @@ jobs:
           git fetch --depth=1 origin "$TARGET_SHA"
           git checkout --detach FETCH_HEAD
           echo "Testing commit $(git rev-parse HEAD)"
-
-      - name: Remove obsolete jobs path imports
-        if: github.event_name == 'push' && github.ref_name == 'review/hardening-v1'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path("src-tauri/src/jobs.rs")
-          text = path.read_text()
-          text = text.replace("use std::path::{Path, PathBuf};\n", "")
-          path.write_text(text)
-          PY
-          if git diff --quiet -- src-tauri/src/jobs.rs; then
-            echo "Obsolete path imports already removed"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src-tauri/src/jobs.rs
-          git commit -m "Remove obsolete jobs path imports"
-          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}.git"
-          git push origin "HEAD:review/hardening-v1"
 
       - name: Configure Rust toolchain
         run: |
