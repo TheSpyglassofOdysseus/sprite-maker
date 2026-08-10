@@ -14,6 +14,7 @@ mod references;
 mod safe_assets;
 mod safe_provider;
 mod safe_references;
+mod safe_workspace;
 mod settings;
 mod sprite_harness;
 mod templates;
@@ -46,12 +47,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             workspace::list_workspaces,
-            workspace::create_workspace,
+            safe_workspace::create_workspace,
             workspace::open_workspace,
             workspace::touch_workspace,
             workspace::rename_workspace,
             workspace::remove_workspace,
-            workspace::delete_workspace,
+            safe_workspace::delete_workspace,
             worktrees::list_worktrees,
             worktrees::create_worktree,
             worktrees::update_worktree,
