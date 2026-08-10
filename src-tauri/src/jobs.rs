@@ -11,7 +11,6 @@ use crate::{
 use chrono::Utc;
 use image::{imageops::FilterType, GenericImage, Rgba, RgbaImage};
 use rusqlite::{params, OptionalExtension};
-use std::path::{Path, PathBuf};
 use tauri::{Emitter, Manager, State};
 use uuid::Uuid;
 
