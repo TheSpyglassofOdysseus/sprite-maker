@@ -19,8 +19,8 @@ struct WorkspaceOwner {
     canonical_path: String,
 }
 
-#[tauri::command]
-pub fn create_workspace(
+#[tauri::command(rename = "create_workspace")]
+pub fn safe_create_workspace(
     name: String,
     path: String,
     state: State<'_, AppState>,
@@ -31,8 +31,8 @@ pub fn create_workspace(
     Ok(workspace)
 }
 
-#[tauri::command]
-pub fn delete_workspace(id: String, state: State<'_, AppState>) -> CommandResult<()> {
+#[tauri::command(rename = "delete_workspace")]
+pub fn safe_delete_workspace(id: String, state: State<'_, AppState>) -> CommandResult<()> {
     let root = workspace::workspace_path(&state, &id)?;
     if root.parent().is_none() || root.components().count() < 3 {
         return Err(CommandError::new(
