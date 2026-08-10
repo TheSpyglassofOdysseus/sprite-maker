@@ -4,11 +4,14 @@ use crate::{
     AppState,
 };
 use chrono::Utc;
-use image::GenericImageView;
 use rusqlite::{params, OptionalExtension};
 use std::path::{Path, PathBuf};
 use tauri::{Manager, State};
 use uuid::Uuid;
+
+const MAX_REFERENCE_FILE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_REFERENCE_EDGE: u32 = 8192;
+const MAX_REFERENCE_PIXELS: u64 = 32 * 1024 * 1024;
 
 const REFERENCE_CATEGORIES: &[&str] = &[
     "character_appearance",
@@ -61,7 +64,85 @@ fn validate_category(category: &str) -> CommandResult<()> {
     }
 }
 
-fn portable_file_name(path: &Path) -> String {
+fn validated_extension(path: &Path) -> CommandResult<String> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp") {
+        Ok(extension)
+    } else {
+        Err(CommandError::new(
+            "invalid_reference_format",
+            "Reference images must use PNG, JPEG, GIF, or WebP",
+        ))
+    }
+}
+
+fn validate_reference_constraints(path: &Path) -> CommandResult<(u32, u32, u64)> {
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > MAX_REFERENCE_FILE_BYTES {
+        return Err(CommandError::new(
+            "reference_too_large",
+            format!(
+                "Reference file is {} bytes; the maximum supported import is {} bytes",
+                metadata.len(),
+                MAX_REFERENCE_FILE_BYTES
+            ),
+        ));
+    }
+    let (width, height) = image::image_dimensions(path)
+        .map_err(|error| CommandError::new("invalid_reference_image", error.to_string()))?;
+    let pixels = u64::from(width).saturating_mul(u64::from(height));
+    if width > MAX_REFERENCE_EDGE || height > MAX_REFERENCE_EDGE || pixels > MAX_REFERENCE_PIXELS {
+        return Err(CommandError::new(
+            "reference_too_large",
+            format!("Reference dimensions {width}x{height} exceed the safe import limit"),
+        ));
+    }
+    Ok((width, height, metadata.len()))
+}
+
+fn canonical_reference_directory(project_root: &Path, path: &Path) -> CommandResult<PathBuf> {
+    let project_root = project_root.canonicalize()?;
+    let worktrees_root = project_root.join("worktrees").canonicalize()?;
+    let candidate = path.canonicalize()?;
+    if !candidate.starts_with(&worktrees_root) {
+        return Err(CommandError::new(
+            "reference_outside_workspace",
+            "Reference directory resolves outside this workspace",
+        ));
+    }
+    let relative = candidate.strip_prefix(&worktrees_root).map_err(|_| {
+        CommandError::new(
+            "reference_outside_workspace",
+            "Reference directory is outside the worktree root",
+        )
+    })?;
+    let components: Vec<_> = relative.components().collect();
+    if components.len() < 2 || components[1].as_os_str().to_str() != Some("references") {
+        return Err(CommandError::new(
+            "reference_outside_workspace",
+            "Reference directory must be inside a worktree references folder",
+        ));
+    }
+    Ok(candidate)
+}
+
+fn canonical_reference_path(project_root: &Path, path: &Path) -> CommandResult<PathBuf> {
+    let candidate = path.canonicalize()?;
+    let parent = candidate.parent().ok_or_else(|| {
+        CommandError::new(
+            "reference_outside_workspace",
+            "Reference path has no containing directory",
+        )
+    })?;
+    canonical_reference_directory(project_root, parent)?;
+    Ok(candidate)
+}
+
+fn portable_file_name(path: &Path, extension: &str) -> String {
     let stem = path
         .file_stem()
         .and_then(|value| value.to_str())
@@ -77,11 +158,6 @@ fn portable_file_name(path: &Path) -> String {
         })
         .collect();
     let slug = slug.trim_matches('-');
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or("png")
-        .to_ascii_lowercase();
     format!(
         "{}-{}.{}",
         &Uuid::new_v4().simple().to_string()[..8],
@@ -105,15 +181,30 @@ pub fn list_reference_images(
         .db
         .lock()
         .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
+    let project_path: String = connection
+        .query_row(
+            r#"SELECT p.path
+               FROM worktrees w JOIN projects p ON p.id=w.project_id
+               WHERE w.id=?1"#,
+            [&worktree_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| CommandError::new("worktree_not_found", "The worktree no longer exists"))?;
     let mut statement = connection.prepare(&format!(
         "{} WHERE worktree_id = ?1 ORDER BY updated_at DESC",
         select_reference()
     ))?;
     let rows = statement.query_map([worktree_id], reference_row)?;
     let references: Vec<_> = rows.filter_map(Result::ok).collect();
+    drop(statement);
+    drop(connection);
+    let project_root = PathBuf::from(project_path);
     for reference in &references {
+        let safe_path = canonical_reference_path(&project_root, Path::new(&reference.path))?;
+        validate_reference_constraints(&safe_path)?;
         app.asset_protocol_scope()
-            .allow_file(&reference.path)
+            .allow_file(&safe_path)
             .map_err(|error| CommandError::new("asset_scope_error", error.to_string()))?;
     }
     Ok(references)
@@ -136,14 +227,10 @@ pub fn import_reference_image(
             "The selected reference image no longer exists",
         ));
     }
-    let image = image::open(&source)
+    let extension = validated_extension(&source)?;
+    let (width, height, _) = validate_reference_constraints(&source)?;
+    image::open(&source)
         .map_err(|error| CommandError::new("invalid_reference_image", error.to_string()))?;
-    let (width, height) = image.dimensions();
-    let format = source
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or("png")
-        .to_ascii_lowercase();
     let (project_id, project_path, worktree_slug): (String, String, String) = {
         let connection = state
             .db
@@ -162,21 +249,28 @@ pub fn import_reference_image(
                 CommandError::new("worktree_not_found", "The worktree no longer exists")
             })?
     };
-    let project_root = PathBuf::from(&project_path);
+    let project_root = PathBuf::from(&project_path).canonicalize()?;
     let reference_directory = project_root
         .join("worktrees")
         .join(worktree_slug)
         .join("references");
     std::fs::create_dir_all(&reference_directory)?;
-    let destination = reference_directory.join(portable_file_name(&source));
+    let reference_directory = canonical_reference_directory(&project_root, &reference_directory)?;
+    let destination = reference_directory.join(portable_file_name(&source, &extension));
     std::fs::copy(&source, &destination)?;
+    let destination = canonical_reference_path(&project_root, &destination)?;
     app.asset_protocol_scope()
         .allow_file(&destination)
         .map_err(|error| CommandError::new("asset_scope_error", error.to_string()))?;
     let metadata = std::fs::metadata(&destination)?;
     let relative_path = destination
         .strip_prefix(&project_root)
-        .unwrap_or(&destination)
+        .map_err(|_| {
+            CommandError::new(
+                "reference_outside_workspace",
+                "Reference path is outside the project root",
+            )
+        })?
         .to_string_lossy()
         .replace('\\', "/");
     let now = Utc::now().to_rfc3339();
@@ -193,7 +287,7 @@ pub fn import_reference_image(
         relative_path,
         category,
         notes: notes.filter(|value| !value.trim().is_empty()),
-        format,
+        format: extension,
         width,
         height,
         file_size: metadata.len(),
@@ -279,34 +373,36 @@ pub fn update_reference_image(
 
 #[tauri::command]
 pub fn delete_reference_image(id: String, state: State<'_, AppState>) -> CommandResult<()> {
-    let path: Option<String> = {
+    let value: Option<(String, String)> = {
         let connection = state
             .db
             .lock()
             .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
         connection
             .query_row(
-                "SELECT path FROM reference_images WHERE id=?1",
+                r#"SELECT p.path, r.path
+                   FROM reference_images r JOIN projects p ON p.id=r.project_id
+                   WHERE r.id=?1"#,
                 [&id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?
     };
-    let path = path.ok_or_else(|| {
+    let (project_path, path) = value.ok_or_else(|| {
         CommandError::new(
             "reference_not_found",
             "The reference image no longer exists",
         )
     })?;
+    let safe_path = canonical_reference_path(Path::new(&project_path), Path::new(&path))?;
+    if safe_path.is_file() {
+        std::fs::remove_file(&safe_path)?;
+    }
     let connection = state
         .db
         .lock()
         .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
     connection.execute("DELETE FROM reference_images WHERE id=?1", [&id])?;
-    let path = PathBuf::from(path);
-    if path.is_file() {
-        std::fs::remove_file(path)?;
-    }
     Ok(())
 }
 
@@ -388,24 +484,36 @@ pub fn prompt_context(
         .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
     let mut lines = Vec::new();
     for id in reference_ids {
-        let value: Option<(String, String, String, Option<String>)> = connection
+        let value: Option<(String, String, String, Option<String>, String)> = connection
             .query_row(
-                r#"SELECT r.name, r.path, r.category, r.notes
+                r#"SELECT r.name, r.path, r.category, r.notes, p.path
                    FROM reference_images r
                    JOIN conversations c ON c.workspace_id = r.project_id
+                   JOIN projects p ON p.id = r.project_id
                    WHERE c.id=?1 AND r.id=?2"#,
                 params![conversation_id, id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
             )
             .optional()?;
-        let (name, path, category, notes) = value.ok_or_else(|| {
+        let (name, path, category, notes, project_path) = value.ok_or_else(|| {
             CommandError::new(
                 "invalid_conversation_reference",
                 "A selected reference is unavailable in this project",
             )
         })?;
+        let safe_path = canonical_reference_path(Path::new(&project_path), Path::new(&path))?;
+        validate_reference_constraints(&safe_path)?;
         lines.push(format!(
-            "- {name} [{category}]: {path}{}",
+            "- {name} [{category}]: {}{}",
+            safe_path.to_string_lossy(),
             notes
                 .filter(|value| !value.trim().is_empty())
                 .map(|value| format!(" — {value}"))

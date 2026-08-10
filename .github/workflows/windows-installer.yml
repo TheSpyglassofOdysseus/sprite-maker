@@ -1,0 +1,62 @@
+name: Windows Installer
+
+on:
+  push:
+    branches:
+      - main
+      - "review/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sprite-studio-windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Build Windows NSIS installer
+    runs-on: windows-latest
+    steps:
+      - name: Check out exact source revision
+        shell: pwsh
+        env:
+          REPOSITORY: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          git init .
+          git remote add origin "https://github.com/$env:REPOSITORY.git"
+          $targetSha = if ($env:PR_HEAD_SHA) { $env:PR_HEAD_SHA } else { $env:EVENT_SHA }
+          git fetch --depth=1 origin $targetSha
+          git checkout --detach FETCH_HEAD
+          git rev-parse HEAD
+
+      - name: Configure Rust toolchain
+        shell: pwsh
+        run: |
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Install Bun
+        shell: pwsh
+        run: |
+          npm install --global bun
+          bun --version
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Windows installer
+        run: bun tauri build --bundles nsis
+
+      - name: Record installer location
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" | ForEach-Object { Write-Host $_.FullName }
+          if (-not (Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe")) {
+            throw "Windows installer was not produced"
+          }

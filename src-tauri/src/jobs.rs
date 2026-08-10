@@ -11,7 +11,6 @@ use crate::{
 use chrono::Utc;
 use image::{imageops::FilterType, GenericImage, Rgba, RgbaImage};
 use rusqlite::{params, OptionalExtension};
-use std::path::{Path, PathBuf};
 use tauri::{Emitter, Manager, State};
 use uuid::Uuid;
 
@@ -43,43 +42,6 @@ fn select_job() -> &'static str {
               progress, stage, error_message, cancel_requested, result_path,
               created_at, started_at, completed_at, updated_at
        FROM background_jobs"#
-}
-
-fn sheet_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SpriteSheet> {
-    Ok(SpriteSheet {
-        id: row.get(0)?,
-        project_id: row.get(1)?,
-        worktree_id: row.get(2)?,
-        animation_id: row.get(3)?,
-        name: row.get(4)?,
-        layout: row.get(5)?,
-        frame_width: row.get(6)?,
-        frame_height: row.get(7)?,
-        padding: row.get(8)?,
-        spacing: row.get(9)?,
-        rows: row.get(10)?,
-        columns: row.get(11)?,
-        scale: row.get(12)?,
-        transparent: row.get(13)?,
-        alignment: row.get(14)?,
-        pivot_x: row.get(15)?,
-        pivot_y: row.get(16)?,
-        png_path: row.get(17)?,
-        metadata_path: row.get(18)?,
-        width: row.get(19)?,
-        height: row.get(20)?,
-        frame_count: row.get(21)?,
-        created_at: row.get(22)?,
-        updated_at: row.get(23)?,
-    })
-}
-
-fn select_sheet() -> &'static str {
-    r#"SELECT id, project_id, worktree_id, animation_id, name, layout,
-              frame_width, frame_height, padding, spacing, rows, columns, scale,
-              transparent, alignment, pivot_x, pivot_y, png_path, metadata_path,
-              width, height, frame_count, created_at, updated_at
-       FROM sprite_sheets"#
 }
 
 pub(crate) fn load_job(state: &AppState, id: &str) -> CommandResult<BackgroundJob> {
@@ -1179,43 +1141,6 @@ pub fn cancel_job(id: String, state: State<'_, AppState>) -> CommandResult<Backg
 }
 
 #[tauri::command]
-pub fn list_sprite_sheets(
-    project_id: String,
-    worktree_id: Option<String>,
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> CommandResult<Vec<SpriteSheet>> {
-    let connection = state
-        .db
-        .lock()
-        .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
-    let mut sheets = Vec::new();
-    if let Some(worktree_id) = worktree_id {
-        let mut statement = connection.prepare(&format!(
-            "{} WHERE project_id=?1 AND worktree_id=?2 ORDER BY updated_at DESC",
-            select_sheet()
-        ))?;
-        let rows = statement.query_map(params![project_id, worktree_id], sheet_row)?;
-        sheets.extend(rows.filter_map(Result::ok));
-    } else {
-        let mut statement = connection.prepare(&format!(
-            "{} WHERE project_id=?1 ORDER BY updated_at DESC",
-            select_sheet()
-        ))?;
-        let rows = statement.query_map([project_id], sheet_row)?;
-        sheets.extend(rows.filter_map(Result::ok));
-    }
-    for sheet in &sheets {
-        if Path::new(&sheet.png_path).is_file() {
-            app.asset_protocol_scope()
-                .allow_file(&sheet.png_path)
-                .map_err(|error| CommandError::new("asset_scope_error", error.to_string()))?;
-        }
-    }
-    Ok(sheets)
-}
-
-#[tauri::command]
 pub fn queue_sprite_sheet(
     input: SpriteSheetInput,
     app: tauri::AppHandle,
@@ -1480,42 +1405,6 @@ pub fn queue_procedural_vfx(
         }
     });
     Ok(queued)
-}
-
-#[tauri::command]
-pub fn delete_sprite_sheet(id: String, state: State<'_, AppState>) -> CommandResult<()> {
-    let paths: Option<(String, String)> = {
-        let connection = state
-            .db
-            .lock()
-            .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
-        connection
-            .query_row(
-                "SELECT png_path, metadata_path FROM sprite_sheets WHERE id=?1",
-                [&id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?
-    };
-    let Some((png_path, metadata_path)) = paths else {
-        return Err(CommandError::new(
-            "sprite_sheet_not_found",
-            "The sprite sheet no longer exists",
-        ));
-    };
-    {
-        let connection = state
-            .db
-            .lock()
-            .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
-        connection.execute("DELETE FROM sprite_sheets WHERE id=?1", [&id])?;
-    }
-    for path in [PathBuf::from(png_path), PathBuf::from(metadata_path)] {
-        if path.is_file() {
-            std::fs::remove_file(path)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

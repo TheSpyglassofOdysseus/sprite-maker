@@ -11,6 +11,10 @@ use std::path::{Path, PathBuf};
 use tauri::{Manager, State};
 use uuid::Uuid;
 
+const MAX_IMAGE_FILE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_IMAGE_EDGE: u32 = 8192;
+const MAX_IMAGE_PIXELS: u64 = 32 * 1024 * 1024;
+
 fn asset_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Asset> {
     Ok(Asset {
         id: row.get(0)?,
@@ -31,23 +35,64 @@ fn asset_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Asset> {
 fn image_paths(directory: &Path, output: &mut Vec<PathBuf>) -> std::io::Result<()> {
     for entry in std::fs::read_dir(directory)? {
         let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            continue;
+        }
         let path = entry.path();
-        if path.is_dir() {
+        if file_type.is_dir() {
             image_paths(&path, output)?;
-        } else if path
-            .extension()
-            .and_then(|value| value.to_str())
-            .is_some_and(|ext| {
-                matches!(
-                    ext.to_ascii_lowercase().as_str(),
-                    "png" | "jpg" | "jpeg" | "gif" | "webp"
-                )
-            })
+        } else if file_type.is_file()
+            && path
+                .extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|ext| {
+                    matches!(
+                        ext.to_ascii_lowercase().as_str(),
+                        "png" | "jpg" | "jpeg" | "gif" | "webp"
+                    )
+                })
         {
             output.push(path);
         }
     }
     Ok(())
+}
+
+fn canonical_asset_path(root: &Path, path: &Path) -> CommandResult<PathBuf> {
+    let root = root.canonicalize()?;
+    let assets_root = root.join("assets").canonicalize()?;
+    let candidate = path.canonicalize()?;
+    if !candidate.starts_with(&assets_root) {
+        return Err(CommandError::new(
+            "asset_outside_workspace",
+            "Asset path resolves outside this workspace",
+        ));
+    }
+    Ok(candidate)
+}
+
+fn validate_image_constraints(path: &Path) -> CommandResult<(u32, u32, u64)> {
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > MAX_IMAGE_FILE_BYTES {
+        return Err(CommandError::new(
+            "image_too_large",
+            format!(
+                "Image file is {} bytes; the maximum supported import is {} bytes",
+                metadata.len(),
+                MAX_IMAGE_FILE_BYTES
+            ),
+        ));
+    }
+    let (width, height) = image::image_dimensions(path)?;
+    let pixels = u64::from(width).saturating_mul(u64::from(height));
+    if width > MAX_IMAGE_EDGE || height > MAX_IMAGE_EDGE || pixels > MAX_IMAGE_PIXELS {
+        return Err(CommandError::new(
+            "image_too_large",
+            format!("Image dimensions {width}x{height} exceed the safe import limit"),
+        ));
+    }
+    Ok((width, height, metadata.len()))
 }
 
 pub(crate) fn inspect(
@@ -56,7 +101,10 @@ pub(crate) fn inspect(
     path: &Path,
     existing_id: Option<String>,
 ) -> CommandResult<Asset> {
-    let reader = ImageReader::open(path)?.with_guessed_format()?;
+    let root = root.canonicalize()?;
+    let path = canonical_asset_path(&root, path)?;
+    let (_, _, file_size) = validate_image_constraints(&path)?;
+    let reader = ImageReader::open(&path)?.with_guessed_format()?;
     let format = reader
         .format()
         .map(|value| format!("{value:?}").to_ascii_lowercase())
@@ -70,7 +118,7 @@ pub(crate) fn inspect(
             | ColorType::Rgba16
             | ColorType::Rgba32F
     );
-    let relative = path.strip_prefix(root).map_err(|_| {
+    let relative = path.strip_prefix(&root).map_err(|_| {
         CommandError::new(
             "asset_outside_workspace",
             "Asset path is outside the workspace",
@@ -96,7 +144,7 @@ pub(crate) fn inspect(
         format,
         width: image.width(),
         height: image.height(),
-        file_size: std::fs::metadata(path)?.len(),
+        file_size,
         has_alpha,
         created_at: Utc::now().to_rfc3339(),
     })
@@ -178,9 +226,6 @@ pub fn scan_assets(
     let root = workspace_path(&state, &workspace_id)?;
     let assets_root = root.join("assets");
     std::fs::create_dir_all(&assets_root)?;
-    app.asset_protocol_scope()
-        .allow_directory(&assets_root, true)
-        .map_err(|error| CommandError::new("asset_scope_error", error.to_string()))?;
     let mut paths = Vec::new();
     image_paths(&assets_root, &mut paths)?;
     let mut assets = Vec::new();
@@ -199,6 +244,9 @@ pub fn scan_assets(
                 .optional()?
         };
         if let Ok(asset) = inspect(&workspace_id, &root, &path, existing_id) {
+            app.asset_protocol_scope()
+                .allow_file(&asset.path)
+                .map_err(|error| CommandError::new("asset_scope_error", error.to_string()))?;
             upsert(&state, &asset, "scanned")?;
             assets.push(asset);
         }
@@ -252,6 +300,7 @@ pub fn import_asset(
             "The selected asset file no longer exists",
         ));
     }
+    validate_image_constraints(&source)?;
     // Decode before copying so invalid files never enter the workspace.
     ImageReader::open(&source)?
         .with_guessed_format()?
@@ -302,13 +351,8 @@ pub fn rename_asset(id: String, name: String, state: State<'_, AppState>) -> Com
             .optional()?
             .ok_or_else(|| CommandError::new("asset_not_found", "Asset no longer exists"))?
     };
-    let old_path = PathBuf::from(old_path);
-    if !old_path.is_file() {
-        return Err(CommandError::new(
-            "asset_missing",
-            "The asset was moved or deleted outside Sprite Studio",
-        ));
-    }
+    let root = workspace_path(&state, &workspace_id)?;
+    let old_path = canonical_asset_path(&root, Path::new(&old_path))?;
     let extension = old_path
         .extension()
         .and_then(|value| value.to_str())
@@ -321,7 +365,6 @@ pub fn rename_asset(id: String, name: String, state: State<'_, AppState>) -> Com
         ));
     }
     std::fs::rename(&old_path, &new_path)?;
-    let root = workspace_path(&state, &workspace_id)?;
     let asset = inspect(&workspace_id, &root, &new_path, Some(id.clone()))?;
     upsert(&state, &asset, "renamed")?;
     Ok(asset)
@@ -329,20 +372,24 @@ pub fn rename_asset(id: String, name: String, state: State<'_, AppState>) -> Com
 
 #[tauri::command]
 pub fn delete_asset(id: String, state: State<'_, AppState>) -> CommandResult<()> {
-    let path: String = {
+    let (workspace_id, path): (String, String) = {
         let connection = state
             .db
             .lock()
             .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
         connection
-            .query_row("SELECT path FROM assets WHERE id = ?1", [&id], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT workspace_id, path FROM assets WHERE id = ?1",
+                [&id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .optional()?
             .ok_or_else(|| CommandError::new("asset_not_found", "Asset no longer exists"))?
     };
-    if Path::new(&path).is_file() {
-        std::fs::remove_file(&path)?;
+    let root = workspace_path(&state, &workspace_id)?;
+    let safe_path = canonical_asset_path(&root, Path::new(&path))?;
+    if safe_path.is_file() {
+        std::fs::remove_file(&safe_path)?;
     }
     let connection = state
         .db
@@ -355,14 +402,9 @@ pub fn delete_asset(id: String, state: State<'_, AppState>) -> CommandResult<()>
 #[tauri::command]
 pub fn export_asset(id: String, state: State<'_, AppState>) -> CommandResult<ExportResult> {
     let asset = get_asset(&state, &id)?;
-    let source = PathBuf::from(&asset.path);
-    if !source.is_file() {
-        return Err(CommandError::new(
-            "asset_missing",
-            "The asset was moved or deleted outside Sprite Studio",
-        ));
-    }
-    let output_directory = workspace_path(&state, &asset.workspace_id)?.join("exports");
+    let root = workspace_path(&state, &asset.workspace_id)?;
+    let source = canonical_asset_path(&root, Path::new(&asset.path))?;
+    let output_directory = root.join("exports");
     std::fs::create_dir_all(&output_directory)?;
     let slug: String = asset
         .name
@@ -465,16 +507,20 @@ pub fn get_generation_manifest(
     }
     let manifest: GenerationManifest = serde_json::from_str(&std::fs::read_to_string(path)?)
         .map_err(|error| CommandError::new("invalid_generation", error.to_string()))?;
-    if manifest.files.is_empty()
-        || !manifest.files.iter().all(|relative| {
-            let candidate = root.join(relative);
-            candidate.is_file()
-                && candidate.starts_with(root.join("assets"))
-                && Path::new(relative)
-                    .components()
-                    .all(|component| !matches!(component, std::path::Component::ParentDir))
-        })
-    {
+    let valid = !manifest.files.is_empty()
+        && manifest.files.iter().all(|relative| {
+            let relative_path = Path::new(relative);
+            if relative_path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+            {
+                return false;
+            }
+            let candidate = root.join(relative_path);
+            canonical_asset_path(&root, &candidate).is_ok()
+                && validate_image_constraints(&candidate).is_ok()
+        });
+    if !valid {
         return Err(CommandError::new(
             "invalid_generation",
             "Codex returned an invalid sprite generation manifest",
@@ -485,7 +531,7 @@ pub fn get_generation_manifest(
 
 #[cfg(test)]
 mod tests {
-    use super::{inspect, safe_category, upsert};
+    use super::{canonical_asset_path, inspect, safe_category, upsert};
     use crate::{database, AppState};
     use image::{Rgba, RgbaImage};
     use std::{collections::HashMap, sync::Mutex};
@@ -515,6 +561,30 @@ mod tests {
             "invalid_image" | "filesystem_error"
         ));
         std::fs::remove_dir_all(root).expect("temporary fixture should be removable");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_asset_cannot_escape_the_workspace() {
+        use std::os::unix::fs::symlink;
+
+        let root =
+            std::env::temp_dir().join(format!("sprite-studio-symlink-test-{}", Uuid::new_v4()));
+        let outside =
+            std::env::temp_dir().join(format!("sprite-studio-outside-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("assets/characters")).expect("asset directory exists");
+        std::fs::create_dir_all(&outside).expect("outside directory exists");
+        let outside_image = outside.join("outside.png");
+        RgbaImage::from_pixel(8, 8, Rgba([255, 0, 0, 255]))
+            .save(&outside_image)
+            .expect("outside image saves");
+        let link = root.join("assets/characters/linked.png");
+        symlink(&outside_image, &link).expect("symlink creates");
+        let error = canonical_asset_path(&root, &link)
+            .expect_err("symlink escaping assets must be rejected");
+        assert_eq!(error.code, "asset_outside_workspace");
+        std::fs::remove_dir_all(root).expect("temporary fixture should be removable");
+        std::fs::remove_dir_all(outside).expect("outside fixture should be removable");
     }
 
     #[test]

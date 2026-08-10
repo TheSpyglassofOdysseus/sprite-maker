@@ -3,12 +3,14 @@ mod assets;
 mod conversations;
 mod database;
 mod error;
+mod generation_staging;
 mod jobs;
 mod models;
 mod motion_planner;
 mod providers;
 mod quality;
 mod references;
+mod safe_sheets;
 mod settings;
 mod sprite_harness;
 mod templates;
@@ -87,9 +89,9 @@ pub fn run() {
             animations::export_animation,
             jobs::list_jobs,
             jobs::cancel_job,
-            jobs::list_sprite_sheets,
+            safe_sheets::list_sprite_sheets_safe,
             jobs::queue_sprite_sheet,
-            jobs::delete_sprite_sheet,
+            safe_sheets::delete_sprite_sheet_safe,
             jobs::list_vfx_effects,
             jobs::queue_procedural_vfx,
             quality::get_quality_report,
