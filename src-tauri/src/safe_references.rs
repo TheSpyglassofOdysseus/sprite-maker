@@ -4,7 +4,7 @@ use crate::{
     AppState,
 };
 use chrono::Utc;
-use image::{GenericImageView, ImageReader};
+use image::ImageReader;
 use rusqlite::{params, OptionalExtension};
 use std::path::{Path, PathBuf};
 use tauri::{Manager, State};
@@ -68,7 +68,12 @@ fn validate_category(category: &str) -> CommandResult<()> {
 fn valid_extension(path: &Path) -> bool {
     path.extension()
         .and_then(|value| value.to_str())
-        .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp"))
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp"
+            )
+        })
 }
 
 fn validate_image(path: &Path) -> CommandResult<(u32, u32, u64)> {
@@ -96,9 +101,16 @@ fn validate_image(path: &Path) -> CommandResult<(u32, u32, u64)> {
     Ok((width, height, metadata.len()))
 }
 
-fn canonical_reference_path(project_root: &Path, worktree_slug: &str, path: &Path) -> CommandResult<PathBuf> {
+fn canonical_reference_path(
+    project_root: &Path,
+    worktree_slug: &str,
+    path: &Path,
+) -> CommandResult<PathBuf> {
     let root = project_root.canonicalize()?;
-    let directory = root.join("worktrees").join(worktree_slug).join("references");
+    let directory = root
+        .join("worktrees")
+        .join(worktree_slug)
+        .join("references");
     std::fs::create_dir_all(&directory)?;
     let directory = directory.canonicalize()?;
     let candidate = path.canonicalize()?;
@@ -112,13 +124,26 @@ fn canonical_reference_path(project_root: &Path, worktree_slug: &str, path: &Pat
 }
 
 fn portable_file_name(path: &Path) -> String {
-    let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("reference");
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("reference");
     let slug: String = stem
         .chars()
-        .map(|character| if character.is_ascii_alphanumeric() { character.to_ascii_lowercase() } else { '-' })
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect();
     let slug = slug.trim_matches('-');
-    let extension = path.extension().and_then(|value| value.to_str()).unwrap_or("png").to_ascii_lowercase();
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("png")
+        .to_ascii_lowercase();
     format!(
         "{}-{}.{}",
         &Uuid::new_v4().simple().to_string()[..8],
@@ -134,7 +159,10 @@ fn file_hash(path: &Path) -> CommandResult<String> {
     Ok(hasher.finalize().to_hex().to_string())
 }
 
-fn worktree_location(state: &AppState, worktree_id: &str) -> CommandResult<(String, PathBuf, String)> {
+fn worktree_location(
+    state: &AppState,
+    worktree_id: &str,
+) -> CommandResult<(String, PathBuf, String)> {
     let connection = state
         .db
         .lock()
@@ -213,8 +241,12 @@ pub fn import_reference_image(
         ));
     }
     let (width, height, _) = validate_image(&source)?;
-    let (project_id, project_root, worktree_slug) = worktree_location(&state, &worktree_id)?;
-    let reference_directory = project_root.join("worktrees").join(&worktree_slug).join("references");
+    let (project_id, project_root, worktree_slug) =
+        worktree_location(&state, &worktree_id)?;
+    let reference_directory = project_root
+        .join("worktrees")
+        .join(&worktree_slug)
+        .join("references");
     std::fs::create_dir_all(&reference_directory)?;
     let reference_directory = reference_directory.canonicalize()?;
     let destination = reference_directory.join(portable_file_name(&source));
@@ -227,16 +259,29 @@ pub fn import_reference_image(
     let metadata = std::fs::metadata(&destination)?;
     let relative_path = destination
         .strip_prefix(&project_root)
-        .map_err(|_| CommandError::new("reference_outside_workspace", "Reference escaped project root"))?
+        .map_err(|_| {
+            CommandError::new(
+                "reference_outside_workspace",
+                "Reference escaped project root",
+            )
+        })?
         .to_string_lossy()
         .replace('\\', "/");
-    let format = destination.extension().and_then(|value| value.to_str()).unwrap_or("png").to_ascii_lowercase();
+    let format = destination
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("png")
+        .to_ascii_lowercase();
     let now = Utc::now().to_rfc3339();
     let reference = ReferenceImage {
         id: Uuid::new_v4().to_string(),
         project_id,
         worktree_id,
-        name: source.file_stem().and_then(|value| value.to_str()).unwrap_or("Reference").to_string(),
+        name: source
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("Reference")
+            .to_string(),
         path: destination.to_string_lossy().into_owned(),
         relative_path,
         category,
@@ -299,7 +344,10 @@ pub fn delete_reference_image(id: String, state: State<'_, AppState>) -> Command
             .optional()?
     };
     let (path, project_path, slug) = value.ok_or_else(|| {
-        CommandError::new("reference_not_found", "The reference image no longer exists")
+        CommandError::new(
+            "reference_not_found",
+            "The reference image no longer exists",
+        )
     })?;
     let project_root = PathBuf::from(project_path).canonicalize()?;
     let safe_path = canonical_reference_path(&project_root, &slug, Path::new(&path))?;
@@ -341,7 +389,16 @@ pub fn prompt_context(
                    JOIN worktrees w ON w.id = r.worktree_id
                    WHERE c.id=?1 AND r.id=?2"#,
                 params![conversation_id, id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
             )
             .optional()?;
         let (name, path, category, notes, project_path, slug) = value.ok_or_else(|| {
