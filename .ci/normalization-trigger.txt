@@ -1,1 +1,1 @@
-Temporary CI trigger for the final hardening normalization pass. Remove before merge.
+Final source normalization trigger after pull-request workflow registration.
