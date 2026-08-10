@@ -27,6 +27,7 @@ export type ProviderEvent = { requestId: string; conversationId: string; eventTy
 export type GenerationManifest = { name: string; category: string; fps: number; files: string[]; generatedAt: string };
 export type SpriteGenerationMetadata = { kind: "sprite-generation"; name: string; category: string; fps: number; assetIds: string[]; animationId?: string };
 export type ExportResult = { pngPath: string; metadataPath: string; width: number; height: number };
+export type GodotExportResult = { pngPath: string; spriteFramesPath: string; metadataPath: string; godotTexturePath: string; width: number; height: number; frameWidth: number; frameHeight: number; frameCount: number };
 export type JobStatus = "queued" | "running" | "analyzing" | "completed" | "failed" | "cancelled";
 export type BackgroundJob = { id: string; projectId: string; worktreeId?: string; kind: string; targetType?: string; targetId?: string; status: JobStatus; progress: number; stage: string; errorMessage?: string; cancelRequested: boolean; resultPath?: string; createdAt: string; startedAt?: string; completedAt?: string; updatedAt: string };
 export type JobEvent = { job: BackgroundJob };
