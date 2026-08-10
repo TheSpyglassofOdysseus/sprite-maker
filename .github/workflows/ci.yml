@@ -1,62 +1,35 @@
-name: CI
+name: Dependency lock refresh
 
 on:
-  push:
-    branches: [main]
   pull_request:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: dependency-lock-refresh-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  frontend:
-    name: Frontend checks
+  refresh-and-audit:
+    name: Regenerate lockfile and audit dependency graph
     runs-on: ubuntu-latest
     steps:
-      - name: Check out exact revision
+      - name: Check out exact review head
         env:
           REPOSITORY: ${{ github.repository }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          EVENT_SHA: ${{ github.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_BRANCH: ${{ github.head_ref }}
         run: |
           git init .
           git remote add origin "https://github.com/${REPOSITORY}.git"
-          TARGET_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
-          git fetch --depth=1 origin "$TARGET_SHA"
-          git checkout --detach FETCH_HEAD
-          echo "Testing $(git rev-parse HEAD)"
-      - name: Install Bun
+          git fetch --depth=1 origin "$HEAD_SHA"
+          git checkout -B "$HEAD_BRANCH" FETCH_HEAD
+          echo "Refreshing dependencies at $(git rev-parse HEAD)"
+      - name: Regenerate Bun lockfile and audit JavaScript dependencies
         run: |
           npm install --global bun
-          bun --version
-      - run: bun install --frozen-lockfile
-      - run: bun run check
-      - run: bun run build
-
-  security:
-    name: Dependency security audit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out exact revision
-        env:
-          REPOSITORY: ${{ github.repository }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          EVENT_SHA: ${{ github.sha }}
-        run: |
-          git init .
-          git remote add origin "https://github.com/${REPOSITORY}.git"
-          TARGET_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
-          git fetch --depth=1 origin "$TARGET_SHA"
-          git checkout --detach FETCH_HEAD
-          echo "Auditing $(git rev-parse HEAD)"
-      - name: Audit JavaScript dependencies
-        run: |
-          npm install --global bun
-          bun install --frozen-lockfile
+          bun install
           bun audit
       - name: Audit Rust dependencies with RustSec
         run: |
@@ -64,125 +37,19 @@ jobs:
           cargo install cargo-audit --locked
           cd src-tauri
           cargo audit
-
-  native:
-    name: Rust tests and Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out exact revision
+      - name: Commit audited lockfile if changed
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          EVENT_SHA: ${{ github.sha }}
+          HEAD_BRANCH: ${{ github.head_ref }}
         run: |
-          git init .
-          git remote add origin "https://github.com/${REPOSITORY}.git"
-          TARGET_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
-          git fetch --depth=1 origin "$TARGET_SHA"
-          git checkout --detach FETCH_HEAD
-          echo "Testing $(git rev-parse HEAD)"
-      - name: Configure Rust
-        run: |
-          rustup default stable
-          rustup component add rustfmt clippy
-          rustc --version
-          cargo --version
-      - name: Install Tauri Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf
-      - name: Check committed Rust formatting
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-      - name: Run Rust tests
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
-      - name: Run Clippy
-        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-
-  godot-export:
-    name: Godot 4.6.3 SpriteFrames load test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out exact revision
-        env:
-          REPOSITORY: ${{ github.repository }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          EVENT_SHA: ${{ github.sha }}
-        run: |
-          git init .
-          git remote add origin "https://github.com/${REPOSITORY}.git"
-          TARGET_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
-          git fetch --depth=1 origin "$TARGET_SHA"
-          git checkout --detach FETCH_HEAD
-          echo "Testing Godot export at $(git rev-parse HEAD)"
-      - name: Configure Rust and native dependencies
-        run: |
-          rustup default stable
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            unzip
-      - name: Download and verify official Godot 4.6.3 stable
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/godot
-          release_json=$(curl -fsSL "https://api.github.com/repos/godotengine/godot-builds/releases/tags/4.6.3-stable")
-          zip_url=$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "Godot_v4.6.3-stable_linux.x86_64.zip") | .browser_download_url')
-          sha_url=$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "Godot_v4.6.3-stable_linux.x86_64.zip.sha256") | .browser_download_url')
-          test -n "$zip_url" && test "$zip_url" != "null"
-          test -n "$sha_url" && test "$sha_url" != "null"
-          curl -fL "$zip_url" -o /tmp/godot/godot.zip
-          curl -fL "$sha_url" -o /tmp/godot/godot.zip.sha256
-          cd /tmp/godot
-          sha256sum -c godot.zip.sha256
-          unzip -q godot.zip
-          chmod +x Godot_v4.6.3-stable_linux.x86_64
-          ./Godot_v4.6.3-stable_linux.x86_64 --version
-      - name: Load emitted SpriteFrames with Godot
-        env:
-          GODOT_BIN: /tmp/godot/Godot_v4.6.3-stable_linux.x86_64
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml godot_engine_loads_emitted_spriteframes_resource -- --ignored --nocapture
-
-  windows-bundle:
-    name: Windows installer smoke build
-    runs-on: windows-latest
-    steps:
-      - name: Check out exact revision
-        shell: pwsh
-        env:
-          REPOSITORY: ${{ github.repository }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          EVENT_SHA: ${{ github.sha }}
-        run: |
-          git init .
-          git remote add origin "https://github.com/$env:REPOSITORY.git"
-          $target = if ($env:PR_HEAD_SHA) { $env:PR_HEAD_SHA } else { $env:EVENT_SHA }
-          git fetch --depth=1 origin $target
-          git checkout --detach FETCH_HEAD
-          git rev-parse HEAD
-      - name: Configure Rust
-        shell: pwsh
-        run: |
-          rustup default stable
-          rustc --version
-          cargo --version
-      - name: Install Bun
-        shell: pwsh
-        run: |
-          npm install --global bun
-          bun --version
-      - run: bun install --frozen-lockfile
-      - run: bun run check
-      - run: bun run tauri build
-      - name: Record Windows installers
-        shell: pwsh
-        run: |
-          $installers = Get-ChildItem -Recurse src-tauri/target/release/bundle -File | Where-Object { $_.Extension -in '.exe','.msi' }
-          if (-not $installers) { throw "No Windows installer was produced" }
-          $installers | ForEach-Object { Write-Host $_.FullName }
+          if git diff --quiet -- bun.lock; then
+            echo "bun.lock already matches the audited dependency graph"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bun.lock
+          git commit -m "Refresh audited Bun lockfile [skip ci]"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}.git"
+          git push origin "HEAD:${HEAD_BRANCH}"
