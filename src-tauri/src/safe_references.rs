@@ -113,6 +113,12 @@ fn canonical_reference_path(
         .join("references");
     std::fs::create_dir_all(&directory)?;
     let directory = directory.canonicalize()?;
+    if !directory.starts_with(&root) {
+        return Err(CommandError::new(
+            "reference_root_outside_workspace",
+            "The worktree reference directory resolves outside this project",
+        ));
+    }
     let candidate = path.canonicalize()?;
     if !candidate.starts_with(&directory) {
         return Err(CommandError::new(
@@ -249,6 +255,12 @@ pub fn import_reference_image(
         .join("references");
     std::fs::create_dir_all(&reference_directory)?;
     let reference_directory = reference_directory.canonicalize()?;
+    if !reference_directory.starts_with(&project_root) {
+        return Err(CommandError::new(
+            "reference_root_outside_workspace",
+            "The worktree reference directory resolves outside this project",
+        ));
+    }
     let destination = reference_directory.join(portable_file_name(&source));
     std::fs::copy(&source, &destination)?;
     let destination = canonical_reference_path(&project_root, &worktree_slug, &destination)?;
