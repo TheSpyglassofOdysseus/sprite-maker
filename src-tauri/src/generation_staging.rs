@@ -27,9 +27,16 @@ impl GenerationStage {
         request_id: &str,
     ) -> CommandResult<Self> {
         let real_root = real_root.canonicalize()?;
-        let stage_root = stage_path(workspace_id, conversation_id, request_id)?;
+        let base = stage_base(workspace_id, conversation_id)?;
+        let stage_root = base.join("current");
         if stage_root.exists() {
-            fs::remove_dir_all(&stage_root)?;
+            let archive = base.join("failed-or-interrupted");
+            fs::create_dir_all(&archive)?;
+            let archived = archive.join(format!("previous-before-{}", safe_id(request_id)?));
+            if archived.exists() {
+                fs::remove_dir_all(&archived)?;
+            }
+            fs::rename(&stage_root, archived)?;
         }
         fs::create_dir_all(&stage_root)?;
 
@@ -178,16 +185,11 @@ fn safe_id(value: &str) -> CommandResult<String> {
     Ok(value.to_string())
 }
 
-fn stage_path(
-    workspace_id: &str,
-    conversation_id: &str,
-    request_id: &str,
-) -> CommandResult<PathBuf> {
+fn stage_base(workspace_id: &str, conversation_id: &str) -> CommandResult<PathBuf> {
     Ok(std::env::temp_dir()
         .join("sprite-studio-generation")
         .join(safe_id(workspace_id)?)
-        .join(safe_id(conversation_id)?)
-        .join(safe_id(request_id)?))
+        .join(safe_id(conversation_id)?))
 }
 
 fn copy_tree(source: &Path, destination: &Path, copied_bytes: &mut u64) -> CommandResult<()> {
@@ -304,7 +306,10 @@ fn unique_destination(assets_root: &Path, requested: &Path) -> CommandResult<Pat
     if !requested.exists() && fs::symlink_metadata(requested).is_err() {
         return Ok(requested.to_path_buf());
     }
-    let stem = requested.file_stem().and_then(|value| value.to_str()).unwrap_or("sprite");
+    let stem = requested
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("sprite");
     for index in 2..10_000_u32 {
         let candidate = parent.join(format!("{stem}-{index}.png"));
         if !candidate.exists() && fs::symlink_metadata(&candidate).is_err() {
@@ -319,7 +324,7 @@ fn unique_destination(assets_root: &Path, requested: &Path) -> CommandResult<Pat
 
 #[cfg(test)]
 mod tests {
-    use super::{validated_manifest_relative, GenerationStage};
+    use super::{stage_base, validated_manifest_relative, GenerationStage};
     use crate::models::GenerationManifest;
     use image::{Rgba, RgbaImage};
     use std::fs;
@@ -330,6 +335,17 @@ mod tests {
         assert!(validated_manifest_relative("../outside.png").is_err());
         assert!(validated_manifest_relative("exports/frame.png").is_err());
         assert!(validated_manifest_relative("assets/characters/frame.png").is_ok());
+    }
+
+    #[test]
+    fn conversation_stage_uses_a_stable_current_path() {
+        let first = stage_base("workspace-a", "conversation-a")
+            .expect("stage base")
+            .join("current");
+        let second = stage_base("workspace-a", "conversation-a")
+            .expect("stage base")
+            .join("current");
+        assert_eq!(first, second);
     }
 
     #[test]
