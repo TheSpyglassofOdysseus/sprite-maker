@@ -1,0 +1,222 @@
+Native CI failure for commit ad800e1461d9c678ad2b08e27db63499b06f628b
+
+95 | #[tauri::command]
+   | ----------------- previous definition of the macro `__tauri_command_name_detect_providers` here
+   |
+   = note: `__tauri_command_name_detect_providers` must be defined only once in the macro namespace of this module
+   = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__cmd__detect_providers` is defined multiple times
+  --> src/safe_provider.rs:20:1
+   |
+20 | #[tauri::command]
+   | ^^^^^^^^^^^^^^^^^ `__cmd__detect_providers` redefined here
+   |
+  ::: src/providers.rs:95:1
+   |
+95 | #[tauri::command]
+   | ----------------- previous definition of the macro `__cmd__detect_providers` here
+   |
+   = note: `__cmd__detect_providers` must be defined only once in the macro namespace of this module
+   = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__tauri_command_name_start_provider_message` is defined multiple times
+   --> src/safe_provider.rs:131:1
+    |
+131 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_start_provider_message` redefined here
+    |
+   ::: src/providers.rs:264:1
+    |
+264 | #[tauri::command]
+    | ----------------- previous definition of the macro `__tauri_command_name_start_provider_message` here
+    |
+    = note: `__tauri_command_name_start_provider_message` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__cmd__start_provider_message` is defined multiple times
+   --> src/safe_provider.rs:131:1
+    |
+131 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__cmd__start_provider_message` redefined here
+    |
+   ::: src/providers.rs:264:1
+    |
+264 | #[tauri::command]
+    | ----------------- previous definition of the macro `__cmd__start_provider_message` here
+    |
+    = note: `__cmd__start_provider_message` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__tauri_command_name_cancel_provider_request` is defined multiple times
+   --> src/safe_provider.rs:575:1
+    |
+575 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_cancel_provider_request` redefined here
+    |
+   ::: src/providers.rs:621:1
+    |
+621 | #[tauri::command]
+    | ----------------- previous definition of the macro `__tauri_command_name_cancel_provider_request` here
+    |
+    = note: `__tauri_command_name_cancel_provider_request` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__cmd__cancel_provider_request` is defined multiple times
+   --> src/safe_provider.rs:575:1
+    |
+575 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__cmd__cancel_provider_request` redefined here
+    |
+   ::: src/providers.rs:621:1
+    |
+621 | #[tauri::command]
+    | ----------------- previous definition of the macro `__cmd__cancel_provider_request` here
+    |
+    = note: `__cmd__cancel_provider_request` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__tauri_command_name_list_reference_images` is defined multiple times
+   --> src/safe_references.rs:190:1
+    |
+190 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_list_reference_images` redefined here
+    |
+   ::: src/references.rs:98:1
+    |
+ 98 | #[tauri::command]
+    | ----------------- previous definition of the macro `__tauri_command_name_list_reference_images` here
+    |
+    = note: `__tauri_command_name_list_reference_images` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__cmd__list_reference_images` is defined multiple times
+   --> src/safe_references.rs:190:1
+    |
+190 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__cmd__list_reference_images` redefined here
+    |
+   ::: src/references.rs:98:1
+    |
+ 98 | #[tauri::command]
+    | ----------------- previous definition of the macro `__cmd__list_reference_images` here
+    |
+    = note: `__cmd__list_reference_images` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__tauri_command_name_import_reference_image` is defined multiple times
+   --> src/safe_references.rs:224:1
+    |
+224 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_import_reference_image` redefined here
+    |
+   ::: src/references.rs:122:1
+    |
+122 | #[tauri::command]
+    | ----------------- previous definition of the macro `__tauri_command_name_import_reference_image` here
+    |
+    = note: `__tauri_command_name_import_reference_image` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__cmd__import_reference_image` is defined multiple times
+   --> src/safe_references.rs:224:1
+    |
+224 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__cmd__import_reference_image` redefined here
+    |
+   ::: src/references.rs:122:1
+    |
+122 | #[tauri::command]
+    | ----------------- previous definition of the macro `__cmd__import_reference_image` here
+    |
+    = note: `__cmd__import_reference_image` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__tauri_command_name_delete_reference_image` is defined multiple times
+   --> src/safe_references.rs:339:1
+    |
+339 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_delete_reference_image` redefined here
+    |
+   ::: src/references.rs:280:1
+    |
+280 | #[tauri::command]
+    | ----------------- previous definition of the macro `__tauri_command_name_delete_reference_image` here
+    |
+    = note: `__tauri_command_name_delete_reference_image` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__cmd__delete_reference_image` is defined multiple times
+   --> src/safe_references.rs:339:1
+    |
+339 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__cmd__delete_reference_image` redefined here
+    |
+   ::: src/references.rs:280:1
+    |
+280 | #[tauri::command]
+    | ----------------- previous definition of the macro `__cmd__delete_reference_image` here
+    |
+    = note: `__cmd__delete_reference_image` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__tauri_command_name_create_workspace` is defined multiple times
+   --> src/workspace.rs:131:1
+    |
+131 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_create_workspace` redefined here
+    |
+   ::: src/safe_workspace.rs:21:1
+    |
+ 21 | #[tauri::command]
+    | ----------------- previous definition of the macro `__tauri_command_name_create_workspace` here
+    |
+    = note: `__tauri_command_name_create_workspace` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__cmd__create_workspace` is defined multiple times
+   --> src/workspace.rs:131:1
+    |
+131 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__cmd__create_workspace` redefined here
+    |
+   ::: src/safe_workspace.rs:21:1
+    |
+ 21 | #[tauri::command]
+    | ----------------- previous definition of the macro `__cmd__create_workspace` here
+    |
+    = note: `__cmd__create_workspace` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__tauri_command_name_delete_workspace` is defined multiple times
+   --> src/workspace.rs:283:1
+    |
+283 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_delete_workspace` redefined here
+    |
+   ::: src/safe_workspace.rs:33:1
+    |
+ 33 | #[tauri::command]
+    | ----------------- previous definition of the macro `__tauri_command_name_delete_workspace` here
+    |
+    = note: `__tauri_command_name_delete_workspace` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__cmd__delete_workspace` is defined multiple times
+   --> src/workspace.rs:283:1
+    |
+283 | #[tauri::command]
+    | ^^^^^^^^^^^^^^^^^ `__cmd__delete_workspace` redefined here
+    |
+   ::: src/safe_workspace.rs:33:1
+    |
+ 33 | #[tauri::command]
+    | ----------------- previous definition of the macro `__cmd__delete_workspace` here
+    |
+    = note: `__cmd__delete_workspace` must be defined only once in the macro namespace of this module
+    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0428`.
+error: could not compile `sprite-maker` (lib) due to 28 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `sprite-maker` (lib test) due to 28 previous errors
