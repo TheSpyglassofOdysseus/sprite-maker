@@ -97,7 +97,7 @@ jobs:
               cat /tmp/cargo-test-tail.log
               echo '```'
             } > /tmp/pr-comment.md
-            gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --method POST --input /tmp/pr-comment.md -H "Content-Type: text/plain" || true
+            gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --method POST -f "body=$(cat /tmp/pr-comment.md)" || true
             exit "$status"
           fi
       - name: Run Clippy
