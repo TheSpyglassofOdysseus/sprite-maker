@@ -1,4 +1,5 @@
 mod animations;
+#[allow(dead_code)]
 mod assets;
 mod conversations;
 mod database;
@@ -8,8 +9,10 @@ mod godot_export;
 mod jobs;
 mod models;
 mod motion_planner;
+#[allow(dead_code)]
 mod providers;
 mod quality;
+#[allow(dead_code)]
 mod references;
 mod safe_assets;
 mod safe_provider;
@@ -18,6 +21,7 @@ mod safe_workspace;
 mod settings;
 mod sprite_harness;
 mod templates;
+#[allow(dead_code)]
 mod workspace;
 mod worktrees;
 
@@ -47,12 +51,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             workspace::list_workspaces,
-            safe_workspace::create_workspace,
+            safe_workspace::safe_create_workspace,
             workspace::open_workspace,
             workspace::touch_workspace,
             workspace::rename_workspace,
             workspace::remove_workspace,
-            safe_workspace::delete_workspace,
+            safe_workspace::safe_delete_workspace,
             worktrees::list_worktrees,
             worktrees::create_worktree,
             worktrees::update_worktree,
