@@ -11,6 +11,7 @@ concurrency:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   frontend:
@@ -76,7 +77,29 @@ jobs:
             git diff --stat -- src-tauri
           fi
       - name: Run Rust tests
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
+        id: rust_tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -o pipefail
+          set +e
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets 2>&1 | tee /tmp/cargo-test.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            tail -n 180 /tmp/cargo-test.log > /tmp/cargo-test-tail.log
+            {
+              echo "Native CI failed on commit \`${{ github.event.pull_request.head.sha }}\`."
+              echo
+              echo '```text'
+              cat /tmp/cargo-test-tail.log
+              echo '```'
+            } > /tmp/pr-comment.md
+            gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --method POST --input /tmp/pr-comment.md -H "Content-Type: text/plain" || true
+            exit "$status"
+          fi
       - name: Run Clippy
         run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
