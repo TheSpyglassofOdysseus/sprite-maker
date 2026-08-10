@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import type { Animation, AnimationInput, AnimationTemplate, Asset, AssetVersion, BackgroundJob, Conversation, ExportResult, FrameOptimizationResult, GenerationManifest, Message, MotionPlan, ProceduralVfxInput, ProviderRequestOptions, ProviderStatus, QualityReport, ReferenceCategory, ReferenceImage, SpriteSheet, SpriteSheetInput, TemplateApplication, VfxEffect, Workspace, Worktree, WorktreeKind } from "$lib/types";
+import type { Animation, AnimationInput, AnimationTemplate, Asset, AssetVersion, BackgroundJob, Conversation, ExportResult, FrameOptimizationResult, GenerationManifest, GodotExportResult, Message, MotionPlan, ProceduralVfxInput, ProviderRequestOptions, ProviderStatus, QualityReport, ReferenceCategory, ReferenceImage, SpriteSheet, SpriteSheetInput, TemplateApplication, VfxEffect, Workspace, Worktree, WorktreeKind } from "$lib/types";
 
 export const api = {
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
@@ -43,6 +43,7 @@ export const api = {
   saveAnimation: (input: AnimationInput) => invoke<Animation>("save_animation", { input }),
   deleteAnimation: (id: string) => invoke<void>("delete_animation", { id }),
   exportAnimation: (id: string, destination?: string) => invoke<ExportResult>("export_animation", { id, destination }),
+  exportGodotAnimation: (id: string, destination?: string) => invoke<GodotExportResult>("export_godot_animation", { id, destination }),
   listJobs: (projectId: string, worktreeId?: string) => invoke<BackgroundJob[]>("list_jobs", { projectId, worktreeId: worktreeId ?? null }),
   cancelJob: (id: string) => invoke<BackgroundJob>("cancel_job", { id }),
   listSpriteSheets: (projectId: string, worktreeId?: string) => invoke<SpriteSheet[]>("list_sprite_sheets", { projectId, worktreeId: worktreeId ?? null }),
