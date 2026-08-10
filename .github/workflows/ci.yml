@@ -37,6 +37,34 @@ jobs:
       - run: bun run check
       - run: bun run build
 
+  security:
+    name: Dependency security audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          git init .
+          git remote add origin "https://github.com/${REPOSITORY}.git"
+          TARGET_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
+          git fetch --depth=1 origin "$TARGET_SHA"
+          git checkout --detach FETCH_HEAD
+          echo "Auditing $(git rev-parse HEAD)"
+      - name: Audit JavaScript dependencies
+        run: |
+          npm install --global bun
+          bun install --frozen-lockfile
+          bun audit
+      - name: Audit Rust dependencies with RustSec
+        run: |
+          rustup default stable
+          cargo install cargo-audit --locked
+          cd src-tauri
+          cargo audit
+
   native:
     name: Rust tests and Clippy
     runs-on: ubuntu-latest
@@ -73,6 +101,53 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
       - name: Run Clippy
         run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+  godot-export:
+    name: Godot 4.6.3 SpriteFrames load test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          git init .
+          git remote add origin "https://github.com/${REPOSITORY}.git"
+          TARGET_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
+          git fetch --depth=1 origin "$TARGET_SHA"
+          git checkout --detach FETCH_HEAD
+          echo "Testing Godot export at $(git rev-parse HEAD)"
+      - name: Configure Rust and native dependencies
+        run: |
+          rustup default stable
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            unzip
+      - name: Download and verify official Godot 4.6.3 stable
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/godot
+          release_json=$(curl -fsSL "https://api.github.com/repos/godotengine/godot-builds/releases/tags/4.6.3-stable")
+          zip_url=$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "Godot_v4.6.3-stable_linux.x86_64.zip") | .browser_download_url')
+          sha_url=$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "Godot_v4.6.3-stable_linux.x86_64.zip.sha256") | .browser_download_url')
+          test -n "$zip_url" && test "$zip_url" != "null"
+          test -n "$sha_url" && test "$sha_url" != "null"
+          curl -fL "$zip_url" -o /tmp/godot/godot.zip
+          curl -fL "$sha_url" -o /tmp/godot/godot.zip.sha256
+          cd /tmp/godot
+          sha256sum -c godot.zip.sha256
+          unzip -q godot.zip
+          chmod +x Godot_v4.6.3-stable_linux.x86_64
+          ./Godot_v4.6.3-stable_linux.x86_64 --version
+      - name: Load emitted SpriteFrames with Godot
+        env:
+          GODOT_BIN: /tmp/godot/Godot_v4.6.3-stable_linux.x86_64
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml godot_engine_loads_emitted_spriteframes_resource -- --ignored --nocapture
 
   windows-bundle:
     name: Windows installer smoke build
