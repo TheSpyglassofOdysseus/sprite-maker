@@ -205,7 +205,8 @@ pub fn list_reference_images(
     let rows = statement.query_map([&worktree_id], reference_row)?;
     let mut references = Vec::new();
     for reference in rows.filter_map(Result::ok) {
-        let path = match canonical_reference_path(&project_root, &slug, Path::new(&reference.path)) {
+        let path = match canonical_reference_path(&project_root, &slug, Path::new(&reference.path))
+        {
             Ok(path) => path,
             Err(_) => continue,
         };
@@ -247,8 +248,7 @@ pub fn import_reference_image(
         ));
     }
     let (width, height, _) = validate_image(&source)?;
-    let (project_id, project_root, worktree_slug) =
-        worktree_location(&state, &worktree_id)?;
+    let (project_id, project_root, worktree_slug) = worktree_location(&state, &worktree_id)?;
     let reference_directory = project_root
         .join("worktrees")
         .join(&worktree_slug)

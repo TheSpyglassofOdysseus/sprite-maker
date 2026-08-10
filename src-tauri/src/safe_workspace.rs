@@ -1,8 +1,7 @@
 use crate::{
     error::{CommandError, CommandResult},
     models::Workspace,
-    workspace,
-    AppState,
+    workspace, AppState,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -101,7 +100,8 @@ mod tests {
     #[test]
     fn owner_marker_is_bound_to_workspace_id_and_path() {
         let root = std::env::temp_dir().join(format!("sprite-studio-owner-v2-{}", Uuid::new_v4()));
-        let other = std::env::temp_dir().join(format!("sprite-studio-owner-v2-other-{}", Uuid::new_v4()));
+        let other =
+            std::env::temp_dir().join(format!("sprite-studio-owner-v2-other-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).expect("root creates");
         fs::create_dir_all(&other).expect("other creates");
         write_owner_marker(&root, "workspace-a").expect("marker writes");

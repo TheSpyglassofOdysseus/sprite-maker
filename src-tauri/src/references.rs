@@ -95,7 +95,6 @@ fn file_hash(path: &Path) -> CommandResult<String> {
     Ok(blake3::hash(&bytes).to_hex().to_string())
 }
 
-#[tauri::command]
 pub fn list_reference_images(
     worktree_id: String,
     app: tauri::AppHandle,
@@ -119,7 +118,6 @@ pub fn list_reference_images(
     Ok(references)
 }
 
-#[tauri::command]
 pub fn import_reference_image(
     worktree_id: String,
     source_path: String,
@@ -277,7 +275,6 @@ pub fn update_reference_image(
         .map_err(Into::into)
 }
 
-#[tauri::command]
 pub fn delete_reference_image(id: String, state: State<'_, AppState>) -> CommandResult<()> {
     let path: Option<String> = {
         let connection = state

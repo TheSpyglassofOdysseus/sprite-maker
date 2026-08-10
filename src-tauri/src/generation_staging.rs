@@ -86,8 +86,9 @@ impl GenerationStage {
         if !manifest_path.is_file() {
             return Ok(None);
         }
-        let mut manifest: GenerationManifest = serde_json::from_slice(&fs::read(&manifest_path)?)
-            .map_err(|error| CommandError::new("invalid_generation", error.to_string()))?;
+        let mut manifest: GenerationManifest =
+            serde_json::from_slice(&fs::read(&manifest_path)?)
+                .map_err(|error| CommandError::new("invalid_generation", error.to_string()))?;
         if manifest.files.is_empty() || manifest.files.len() > MAX_GENERATED_FILES {
             return Err(CommandError::new(
                 "invalid_generation",
@@ -207,7 +208,10 @@ fn copy_tree(source: &Path, destination: &Path, copied_bytes: &mut u64) -> Comma
         } else if file_type.is_file() {
             let bytes = entry.metadata()?.len();
             *copied_bytes = copied_bytes.checked_add(bytes).ok_or_else(|| {
-                CommandError::new("generation_stage_too_large", "Generation staging size overflowed")
+                CommandError::new(
+                    "generation_stage_too_large",
+                    "Generation staging size overflowed",
+                )
             })?;
             if *copied_bytes > MAX_STAGE_BYTES {
                 return Err(CommandError::new(
@@ -237,7 +241,11 @@ fn validated_manifest_relative(value: &str) -> CommandResult<PathBuf> {
         ));
     }
     let mut components = path.components();
-    if components.next().and_then(|value| value.as_os_str().to_str()) != Some("assets") {
+    if components
+        .next()
+        .and_then(|value| value.as_os_str().to_str())
+        != Some("assets")
+    {
         return Err(CommandError::new(
             "invalid_generation",
             "Generated files must be written under assets/",
@@ -358,13 +366,9 @@ mod tests {
             .save(&existing)
             .expect("existing image saves");
 
-        let stage = GenerationStage::prepare(
-            &root,
-            "workspace-test",
-            "conversation-test",
-            "request-test",
-        )
-        .expect("stage should prepare");
+        let stage =
+            GenerationStage::prepare(&root, "workspace-test", "conversation-test", "request-test")
+                .expect("stage should prepare");
         let staged = stage.path().join("assets/characters/hero.png");
         RgbaImage::from_pixel(16, 16, Rgba([4, 5, 6, 255]))
             .save(&staged)

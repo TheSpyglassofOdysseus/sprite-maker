@@ -92,7 +92,6 @@ fn codex_modes(executable: &Path) -> Vec<ProviderMode> {
         .collect()
 }
 
-#[tauri::command]
 pub fn detect_providers() -> Vec<ProviderStatus> {
     [
         ("codex", "Codex CLI"),
@@ -261,7 +260,6 @@ fn parse_codex_line(line: &str) -> (Option<String>, Option<String>, Option<Strin
     (None, None, None)
 }
 
-#[tauri::command]
 pub fn start_provider_message(
     conversation_id: String,
     prompt: String,
@@ -618,7 +616,6 @@ fn validate_generation_options(generation: &GenerationOptions) -> CommandResult<
     Ok(())
 }
 
-#[tauri::command]
 pub fn cancel_provider_request(
     request_id: String,
     state: State<'_, AppState>,

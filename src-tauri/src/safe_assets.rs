@@ -134,7 +134,11 @@ fn safe_manifest_relative(value: &str) -> CommandResult<PathBuf> {
         ));
     }
     let mut components = path.components();
-    if components.next().and_then(|value| value.as_os_str().to_str()) != Some("assets") {
+    if components
+        .next()
+        .and_then(|value| value.as_os_str().to_str())
+        != Some("assets")
+    {
         return Err(CommandError::new(
             "invalid_generation",
             "Generated files must be written below assets/",

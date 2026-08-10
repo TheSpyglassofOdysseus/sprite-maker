@@ -169,7 +169,6 @@ pub(crate) fn upsert(state: &AppState, asset: &Asset, change_kind: &str) -> Comm
     Ok(())
 }
 
-#[tauri::command]
 pub fn scan_assets(
     workspace_id: String,
     app: tauri::AppHandle,
@@ -237,7 +236,6 @@ fn safe_category(category: &str) -> CommandResult<String> {
     Ok(value)
 }
 
-#[tauri::command]
 pub fn import_asset(
     workspace_id: String,
     source_path: String,
@@ -279,7 +277,6 @@ pub fn import_asset(
     Ok(asset)
 }
 
-#[tauri::command]
 pub fn rename_asset(id: String, name: String, state: State<'_, AppState>) -> CommandResult<Asset> {
     let name = name.trim();
     if name.is_empty() || name.contains('/') || name.contains('\\') {
@@ -327,7 +324,6 @@ pub fn rename_asset(id: String, name: String, state: State<'_, AppState>) -> Com
     Ok(asset)
 }
 
-#[tauri::command]
 pub fn delete_asset(id: String, state: State<'_, AppState>) -> CommandResult<()> {
     let path: String = {
         let connection = state
@@ -352,7 +348,6 @@ pub fn delete_asset(id: String, state: State<'_, AppState>) -> CommandResult<()>
     Ok(())
 }
 
-#[tauri::command]
 pub fn export_asset(id: String, state: State<'_, AppState>) -> CommandResult<ExportResult> {
     let asset = get_asset(&state, &id)?;
     let source = PathBuf::from(&asset.path);
@@ -453,7 +448,6 @@ pub fn list_asset_versions(
     Ok(rows.filter_map(Result::ok).collect())
 }
 
-#[tauri::command]
 pub fn get_generation_manifest(
     workspace_id: String,
     state: State<'_, AppState>,

@@ -69,7 +69,10 @@ pub fn export_godot_animation(
 
     let frame_count = decoded.len() as u32;
     let sheet_width = frame_width.checked_mul(frame_count).ok_or_else(|| {
-        CommandError::new("export_too_large", "Godot spritesheet dimensions overflowed")
+        CommandError::new(
+            "export_too_large",
+            "Godot spritesheet dimensions overflowed",
+        )
     })?;
     let pixels = u64::from(sheet_width).saturating_mul(u64::from(frame_height));
     if sheet_width > MAX_GODOT_SHEET_EDGE
@@ -287,8 +290,14 @@ mod tests {
     #[test]
     fn emits_sprite_frames_resource() {
         let frames = vec![
-            AnimationFrame { asset_id: "a".into(), duration_ms: Some(125) },
-            AnimationFrame { asset_id: "b".into(), duration_ms: Some(250) },
+            AnimationFrame {
+                asset_id: "a".into(),
+                duration_ms: Some(125),
+            },
+            AnimationFrame {
+                asset_id: "b".into(),
+                duration_ms: Some(250),
+            },
         ];
         let resource = sprite_frames_resource("run", 8.0, true, 64, 64, &frames, "res://hero.png");
         assert!(resource.contains("type=\"SpriteFrames\""));

@@ -3,16 +3,12 @@ use crate::{
     error::{CommandError, CommandResult},
     generation_staging::GenerationStage,
     models::{GenerationOptions, ProviderEvent, ProviderRequestOptions, ProviderStatus},
-    providers,
-    safe_references,
+    providers, safe_references,
     sprite_harness::studio_prompt,
     workspace::workspace_path,
     AppState,
 };
-use std::{
-    path::PathBuf,
-    process::Stdio,
-};
+use std::{path::PathBuf, process::Stdio};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -246,7 +242,14 @@ async fn run_codex(app: AppHandle, run: ProviderRun, mut cancel_rx: oneshot::Rec
     let real_workspace = match workspace_path(&state, &workspace_id) {
         Ok(path) => path,
         Err(error) => {
-            finish_failed(&app, &state, &request_id, &conversation_id, &assistant_id, error.message);
+            finish_failed(
+                &app,
+                &state,
+                &request_id,
+                &conversation_id,
+                &assistant_id,
+                error.message,
+            );
             return;
         }
     };
@@ -258,7 +261,14 @@ async fn run_codex(app: AppHandle, run: ProviderRun, mut cancel_rx: oneshot::Rec
     ) {
         Ok(stage) => stage,
         Err(error) => {
-            finish_failed(&app, &state, &request_id, &conversation_id, &assistant_id, error.message);
+            finish_failed(
+                &app,
+                &state,
+                &request_id,
+                &conversation_id,
+                &assistant_id,
+                error.message,
+            );
             return;
         }
     };
@@ -365,9 +375,19 @@ async fn run_codex(app: AppHandle, run: ProviderRun, mut cancel_rx: oneshot::Rec
     remove_canceller(&state, &request_id);
 
     if cancelled {
-        let message = if response.is_empty() { "Request cancelled" } else { &response };
+        let message = if response.is_empty() {
+            "Request cancelled"
+        } else {
+            &response
+        };
         let _ = update_message(&state, &assistant_id, message, "cancelled");
-        emit(&app, &request_id, &conversation_id, "cancelled", "Request cancelled");
+        emit(
+            &app,
+            &request_id,
+            &conversation_id,
+            "cancelled",
+            "Request cancelled",
+        );
         return;
     }
 
@@ -380,7 +400,10 @@ async fn run_codex(app: AppHandle, run: ProviderRun, mut cancel_rx: oneshot::Rec
                         &request_id,
                         &conversation_id,
                         "activity",
-                        format!("Validated and promoted {} generated file(s)", manifest.files.len()),
+                        format!(
+                            "Validated and promoted {} generated file(s)",
+                            manifest.files.len()
+                        ),
                     );
                 }
                 Ok(None) => {}
@@ -409,7 +432,14 @@ async fn run_codex(app: AppHandle, run: ProviderRun, mut cancel_rx: oneshot::Rec
             } else {
                 stderr_output
             };
-            finish_failed(&app, &state, &request_id, &conversation_id, &assistant_id, message);
+            finish_failed(
+                &app,
+                &state,
+                &request_id,
+                &conversation_id,
+                &assistant_id,
+                message,
+            );
         }
         Err(error) => {
             finish_failed(
@@ -522,8 +552,10 @@ fn validate_provider_options(options: &ProviderRequestOptions) -> CommandResult<
 }
 
 fn validate_generation_options(generation: &GenerationOptions) -> CommandResult<()> {
-    if !matches!(generation.quality.as_str(), "low" | "mid" | "high" | "custom")
-        || !(8..=512).contains(&generation.width)
+    if !matches!(
+        generation.quality.as_str(),
+        "low" | "mid" | "high" | "custom"
+    ) || !(8..=512).contains(&generation.width)
         || !(8..=512).contains(&generation.height)
         || !(1..=32).contains(&generation.frames)
         || !(1..=60).contains(&generation.fps)

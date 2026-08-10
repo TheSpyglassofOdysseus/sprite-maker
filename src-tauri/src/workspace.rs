@@ -128,7 +128,6 @@ pub fn list_workspaces(state: State<'_, AppState>) -> CommandResult<Vec<Workspac
     Ok(rows.filter_map(Result::ok).collect())
 }
 
-#[tauri::command]
 pub fn create_workspace(
     name: String,
     path: String,
@@ -280,7 +279,6 @@ pub fn remove_workspace(id: String, state: State<'_, AppState>) -> CommandResult
     Ok(())
 }
 
-#[tauri::command]
 pub fn delete_workspace(id: String, state: State<'_, AppState>) -> CommandResult<()> {
     let path = workspace_path(&state, &id)?;
     if path.parent().is_none() || path.components().count() < 3 {
