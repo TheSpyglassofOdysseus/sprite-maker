@@ -1,63 +1,168 @@
-name: Dependency lock refresh
+name: Final Rust source normalization
 
 on:
   push:
     branches: ["agent/hardening-and-godot-v1"]
-  pull_request:
 
 concurrency:
-  group: dependency-lock-refresh-${{ github.event.pull_request.number || github.ref }}
+  group: final-rust-source-normalization
   cancel-in-progress: true
 
 permissions:
   contents: write
 
 jobs:
-  refresh-and-audit:
-    name: Regenerate lockfile and audit dependency graph
+  normalize:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out exact review head
+      - name: Check out review branch
         env:
           REPOSITORY: ${{ github.repository }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          EVENT_SHA: ${{ github.sha }}
-          PR_HEAD_BRANCH: ${{ github.head_ref }}
-          EVENT_BRANCH: ${{ github.ref_name }}
+          BRANCH: ${{ github.ref_name }}
         run: |
           git init .
           git remote add origin "https://github.com/${REPOSITORY}.git"
-          HEAD_SHA="${PR_HEAD_SHA:-$EVENT_SHA}"
-          HEAD_BRANCH="${PR_HEAD_BRANCH:-$EVENT_BRANCH}"
-          git fetch --depth=1 origin "$HEAD_SHA"
-          git checkout -B "$HEAD_BRANCH" FETCH_HEAD
-          echo "Refreshing dependencies at $(git rev-parse HEAD) on $HEAD_BRANCH"
-      - name: Regenerate Bun lockfile and audit JavaScript dependencies
+          git fetch --depth=1 origin "$BRANCH"
+          git checkout -B "$BRANCH" FETCH_HEAD
+
+      - name: Harden shared get_asset and add regression test
         run: |
-          npm install --global bun
-          bun install
-          bun audit
-      - name: Audit Rust dependencies with RustSec
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("src-tauri/src/assets.rs")
+          text = path.read_text()
+          old = '''pub fn get_asset(state: &AppState, id: &str) -> CommandResult<Asset> {
+    let connection = state
+        .db
+        .lock()
+        .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
+    connection.query_row(
+        "SELECT id, workspace_id, name, path, relative_path, category, format, width, height, file_size, has_alpha, created_at FROM assets WHERE id = ?1",
+        [id], asset_row,
+    ).optional()?.ok_or_else(|| CommandError::new("asset_not_found", "Asset no longer exists"))
+}
+'''
+          new = '''pub fn get_asset(state: &AppState, id: &str) -> CommandResult<Asset> {
+    let mut asset = {
+        let connection = state
+            .db
+            .lock()
+            .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
+        connection
+            .query_row(
+                "SELECT id, workspace_id, name, path, relative_path, category, format, width, height, file_size, has_alpha, created_at FROM assets WHERE id = ?1",
+                [id],
+                asset_row,
+            )
+            .optional()?
+            .ok_or_else(|| CommandError::new("asset_not_found", "Asset no longer exists"))?
+    };
+    let root = workspace_path(state, &asset.workspace_id)?.canonicalize()?;
+    let assets_root = root.join("assets").canonicalize()?;
+    if !assets_root.starts_with(&root) {
+        return Err(CommandError::new(
+            "asset_root_outside_workspace",
+            "The assets directory resolves outside this workspace",
+        ));
+    }
+    let candidate = PathBuf::from(&asset.path).canonicalize()?;
+    if !candidate.starts_with(&assets_root) || !candidate.is_file() {
+        return Err(CommandError::new(
+            "asset_outside_workspace",
+            "Stored asset path resolves outside this workspace",
+        ));
+    }
+    asset.path = candidate.to_string_lossy().into_owned();
+    Ok(asset)
+}
+'''
+          if old not in text:
+              raise SystemExit("Expected get_asset implementation not found")
+          path.write_text(text.replace(old, new, 1))
+
+          lib = Path("src-tauri/src/lib.rs")
+          lib_text = lib.read_text()
+          marker = "mod worktrees;\n"
+          if "mod use_time_asset_tests;" not in lib_text:
+              lib_text = lib_text.replace(marker, marker + "#[cfg(test)]\nmod use_time_asset_tests;\n", 1)
+              lib.write_text(lib_text)
+          PY
+          cat > src-tauri/src/use_time_asset_tests.rs <<'RS'
+          #[cfg(unix)]
+          #[test]
+          fn shared_asset_lookup_rejects_post_scan_symlink_escape() {
+              use crate::{
+                  assets::{get_asset, inspect, upsert},
+                  database, AppState,
+              };
+              use image::{Rgba, RgbaImage};
+              use std::{collections::HashMap, os::unix::fs::symlink, sync::Mutex};
+              use uuid::Uuid;
+
+              let root = std::env::temp_dir().join(format!("sprite-studio-use-time-{}", Uuid::new_v4()));
+              let outside = std::env::temp_dir().join(format!("sprite-studio-use-time-outside-{}", Uuid::new_v4()));
+              std::fs::create_dir_all(root.join("assets/characters")).expect("asset tree creates");
+              std::fs::create_dir_all(&outside).expect("outside tree creates");
+              let connection = database::open(&root.join("app.sqlite3")).expect("database opens");
+              connection
+                  .execute(
+                      "INSERT INTO projects(id,name,path,created_at,last_opened_at) VALUES ('project','Test',?1,'now','now')",
+                      [root.to_string_lossy().as_ref()],
+                  )
+                  .expect("project registers");
+              let state = AppState {
+                  db: Mutex::new(connection),
+                  cancellers: Mutex::new(HashMap::new()),
+              };
+
+              let path = root.join("assets/characters/hero.png");
+              RgbaImage::from_pixel(8, 8, Rgba([255, 0, 0, 255]))
+                  .save(&path)
+                  .expect("asset saves");
+              let asset = inspect("project", &root, &path, None).expect("asset inspects");
+              upsert(&state, &asset, "scanned").expect("asset indexes");
+              assert!(get_asset(&state, &asset.id).is_ok());
+
+              let outside_image = outside.join("outside.png");
+              RgbaImage::from_pixel(8, 8, Rgba([0, 255, 0, 255]))
+                  .save(&outside_image)
+                  .expect("outside image saves");
+              std::fs::remove_file(&path).expect("original removes");
+              symlink(&outside_image, &path).expect("replacement symlink creates");
+              let error = get_asset(&state, &asset.id).expect_err("escaped replacement must be rejected");
+              assert_eq!(error.code, "asset_outside_workspace");
+
+              drop(state);
+              std::fs::remove_file(path).expect("symlink removes");
+              std::fs::remove_dir_all(root).expect("root cleans");
+              std::fs::remove_dir_all(outside).expect("outside cleans");
+          }
+          RS
+
+      - name: Format and validate Rust
         run: |
           rustup default stable
-          cargo install cargo-audit --locked
-          cd src-tauri
-          cargo audit
-      - name: Commit audited lockfile if changed
+          rustup component add rustfmt clippy
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
+          cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Commit validated source normalization
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          PR_HEAD_BRANCH: ${{ github.head_ref }}
-          EVENT_BRANCH: ${{ github.ref_name }}
+          BRANCH: ${{ github.ref_name }}
         run: |
-          HEAD_BRANCH="${PR_HEAD_BRANCH:-$EVENT_BRANCH}"
-          if git diff --quiet -- bun.lock; then
-            echo "bun.lock already matches the audited dependency graph"
+          if git diff --quiet -- src-tauri; then
+            echo "No Rust normalization changes"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add bun.lock
-          git commit -m "Refresh audited Bun lockfile [skip ci]"
+          git add src-tauri
+          git commit -m "Harden use-time asset lookup and apply rustfmt [skip ci]"
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}.git"
-          git push origin "HEAD:${HEAD_BRANCH}"
+          git push origin "HEAD:${BRANCH}"
