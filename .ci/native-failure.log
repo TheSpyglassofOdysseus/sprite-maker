@@ -1,222 +1,222 @@
-Native CI failure for commit ad800e1461d9c678ad2b08e27db63499b06f628b
+Clippy failure for commit e4ff8d9b2da337575c918b217704a87a656c1571
 
-95 | #[tauri::command]
-   | ----------------- previous definition of the macro `__tauri_command_name_detect_providers` here
+    Checking async-task v4.7.1
+   Compiling zvariant v5.13.1
+    Checking serialize-to-javascript v0.1.2
+    Checking tokio v1.53.1
+    Checking async-io v2.6.0
+   Compiling tauri-macros v2.6.3
+    Checking muda v0.19.3
+    Checking tauri-runtime v2.11.3
+    Checking zerocopy v0.8.56
+    Checking getrandom v0.3.4
+    Checking async-channel v2.5.0
+    Checking mime v0.3.17
+    Checking tauri-runtime-wry v2.11.4
+    Checking atomic-waker v1.1.2
+    Checking http-range v0.1.5
+    Checking piper v0.2.5
+   Compiling zbus_names v4.3.4
+    Checking async-signal v0.2.14
+    Checking num-traits v0.2.19
+    Checking async-lock v3.4.2
+   Compiling tauri-plugin-opener v2.5.4
+   Compiling tauri-plugin-dialog v2.7.2
+   Compiling tracing-attributes v0.1.31
+    Checking is-docker v0.2.0
+    Checking tracing-core v0.1.36
+    Checking ahash v0.8.12
+   Compiling rfd v0.16.0
+    Checking hashbrown v0.14.5
+    Checking is-wsl v0.4.0
+    Checking async-process v2.5.0
+   Compiling zbus_macros v5.18.0
+    Checking tracing v0.1.44
+    Checking blocking v1.6.2
+    Checking async-executor v1.14.0
+    Checking async-broadcast v0.7.2
+   Compiling async-recursion v1.1.1
+   Compiling async-trait v0.1.92
+    Checking ordered-stream v0.2.0
+    Checking hex v0.4.3
+    Checking color_quant v1.1.0
+    Checking zune-core v0.5.3
+    Checking byteorder-lite v0.1.0
+    Checking quick-error v2.0.1
+    Checking weezl v0.1.12
+    Checking pxfm v0.1.30
+    Checking gif v0.14.2
+    Checking image-webp v0.2.4
+    Checking zbus v5.18.0
+    Checking zune-jpeg v0.5.15
+    Checking png v0.18.1
+    Checking libsqlite3-sys v0.30.1
+    Checking hashlink v0.9.1
+    Checking moxcms v0.8.1
+    Checking open v5.4.1
+   Compiling sprite-maker v0.1.0 (/home/runner/work/sprite-maker/sprite-maker/src-tauri)
+    Checking fallible-streaming-iterator v0.1.9
+    Checking env_home v0.1.0
+    Checking arrayvec v0.7.8
+    Checking cpufeatures v0.3.0
+    Checking either v1.17.0
+    Checking iana-time-zone v0.1.65
+    Checking fallible-iterator v0.3.0
+    Checking arrayref v0.3.9
+    Checking bytemuck v1.25.2
+    Checking constant_time_eq v0.4.2
+    Checking blake3 v1.8.6
+    Checking rusqlite v0.32.1
+    Checking chrono v0.4.45
+    Checking which v7.0.3
+    Checking image v0.25.10
+error: function `image_paths` is never used
+  --> src/assets.rs:31:4
    |
-   = note: `__tauri_command_name_detect_providers` must be defined only once in the macro namespace of this module
-   = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0428]: the name `__cmd__detect_providers` is defined multiple times
-  --> src/safe_provider.rs:20:1
+31 | fn image_paths(directory: &Path, output: &mut Vec<PathBuf>) -> std::io::Result<()> {
+   |    ^^^^^^^^^^^
    |
-20 | #[tauri::command]
-   | ^^^^^^^^^^^^^^^^^ `__cmd__detect_providers` redefined here
+   = note: `-D dead-code` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`
+
+error: function `scan_assets` is never used
+   --> src/assets.rs:172:8
+    |
+172 | pub fn scan_assets(
+    |        ^^^^^^^^^^^
+
+error: function `safe_category` is never used
+   --> src/assets.rs:225:4
+    |
+225 | fn safe_category(category: &str) -> CommandResult<String> {
+    |    ^^^^^^^^^^^^^
+
+error: function `import_asset` is never used
+   --> src/assets.rs:239:8
+    |
+239 | pub fn import_asset(
+    |        ^^^^^^^^^^^^
+
+error: function `rename_asset` is never used
+   --> src/assets.rs:280:8
+    |
+280 | pub fn rename_asset(id: String, name: String, state: State<'_, AppState>) -> CommandResult<Asset> {
+    |        ^^^^^^^^^^^^
+
+error: function `delete_asset` is never used
+   --> src/assets.rs:327:8
+    |
+327 | pub fn delete_asset(id: String, state: State<'_, AppState>) -> CommandResult<()> {
+    |        ^^^^^^^^^^^^
+
+error: function `export_asset` is never used
+   --> src/assets.rs:351:8
+    |
+351 | pub fn export_asset(id: String, state: State<'_, AppState>) -> CommandResult<ExportResult> {
+    |        ^^^^^^^^^^^^
+
+error: function `get_generation_manifest` is never used
+   --> src/assets.rs:451:8
+    |
+451 | pub fn get_generation_manifest(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: function `emit` is never used
+   --> src/providers.rs:184:4
+    |
+184 | fn emit(
+    |    ^^^^
+
+error: function `parse_codex_line` is never used
+   --> src/providers.rs:202:4
+    |
+202 | fn parse_codex_line(line: &str) -> (Option<String>, Option<String>, Option<String>) {
+    |    ^^^^^^^^^^^^^^^^
+
+error: function `start_provider_message` is never used
+   --> src/providers.rs:263:8
+    |
+263 | pub fn start_provider_message(
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+error: struct `ProviderRun` is never constructed
+   --> src/providers.rs:355:8
+    |
+355 | struct ProviderRun {
+    |        ^^^^^^^^^^^
+
+error: function `run_codex` is never used
+   --> src/providers.rs:367:10
+    |
+367 | async fn run_codex(app: AppHandle, run: ProviderRun, mut cancel_rx: oneshot::Receiver<()>) {
+    |          ^^^^^^^^^
+
+error: function `codex_arguments` is never used
+   --> src/providers.rs:520:4
+    |
+520 | fn codex_arguments(
+    |    ^^^^^^^^^^^^^^^
+
+error: function `validate_provider_options` is never used
+   --> src/providers.rs:559:4
+    |
+559 | fn validate_provider_options(options: &ProviderRequestOptions) -> CommandResult<()> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: function `validate_generation_options` is never used
+   --> src/providers.rs:598:4
+    |
+598 | fn validate_generation_options(generation: &GenerationOptions) -> CommandResult<()> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: function `portable_file_name` is never used
+  --> src/references.rs:64:4
    |
-  ::: src/providers.rs:95:1
+64 | fn portable_file_name(path: &Path) -> String {
+   |    ^^^^^^^^^^^^^^^^^^
+
+error: function `file_hash` is never used
+  --> src/references.rs:93:4
    |
-95 | #[tauri::command]
-   | ----------------- previous definition of the macro `__cmd__detect_providers` here
+93 | fn file_hash(path: &Path) -> CommandResult<String> {
+   |    ^^^^^^^^^
+
+error: function `list_reference_images` is never used
+  --> src/references.rs:98:8
    |
-   = note: `__cmd__detect_providers` must be defined only once in the macro namespace of this module
-   = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+98 | pub fn list_reference_images(
+   |        ^^^^^^^^^^^^^^^^^^^^^
 
-error[E0428]: the name `__tauri_command_name_start_provider_message` is defined multiple times
-   --> src/safe_provider.rs:131:1
+error: function `import_reference_image` is never used
+   --> src/references.rs:121:8
     |
-131 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_start_provider_message` redefined here
-    |
-   ::: src/providers.rs:264:1
-    |
-264 | #[tauri::command]
-    | ----------------- previous definition of the macro `__tauri_command_name_start_provider_message` here
-    |
-    = note: `__tauri_command_name_start_provider_message` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+121 | pub fn import_reference_image(
+    |        ^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0428]: the name `__cmd__start_provider_message` is defined multiple times
-   --> src/safe_provider.rs:131:1
+error: function `delete_reference_image` is never used
+   --> src/references.rs:278:8
     |
-131 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__cmd__start_provider_message` redefined here
-    |
-   ::: src/providers.rs:264:1
-    |
-264 | #[tauri::command]
-    | ----------------- previous definition of the macro `__cmd__start_provider_message` here
-    |
-    = note: `__cmd__start_provider_message` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+278 | pub fn delete_reference_image(id: String, state: State<'_, AppState>) -> CommandResult<()> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0428]: the name `__tauri_command_name_cancel_provider_request` is defined multiple times
-   --> src/safe_provider.rs:575:1
+error: function `prompt_context` is never used
+   --> src/references.rs:370:8
     |
-575 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_cancel_provider_request` redefined here
-    |
-   ::: src/providers.rs:621:1
-    |
-621 | #[tauri::command]
-    | ----------------- previous definition of the macro `__tauri_command_name_cancel_provider_request` here
-    |
-    = note: `__tauri_command_name_cancel_provider_request` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+370 | pub fn prompt_context(
+    |        ^^^^^^^^^^^^^^
 
-error[E0428]: the name `__cmd__cancel_provider_request` is defined multiple times
-   --> src/safe_provider.rs:575:1
-    |
-575 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__cmd__cancel_provider_request` redefined here
-    |
-   ::: src/providers.rs:621:1
-    |
-621 | #[tauri::command]
-    | ----------------- previous definition of the macro `__cmd__cancel_provider_request` here
-    |
-    = note: `__cmd__cancel_provider_request` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+error: function `owns_workspace` is never used
+  --> src/workspace.rs:78:4
+   |
+78 | fn owns_workspace(path: &Path) -> CommandResult<bool> {
+   |    ^^^^^^^^^^^^^^
 
-error[E0428]: the name `__tauri_command_name_list_reference_images` is defined multiple times
-   --> src/safe_references.rs:190:1
+error: function `delete_workspace` is never used
+   --> src/workspace.rs:282:8
     |
-190 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_list_reference_images` redefined here
-    |
-   ::: src/references.rs:98:1
-    |
- 98 | #[tauri::command]
-    | ----------------- previous definition of the macro `__tauri_command_name_list_reference_images` here
-    |
-    = note: `__tauri_command_name_list_reference_images` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
+282 | pub fn delete_workspace(id: String, state: State<'_, AppState>) -> CommandResult<()> {
+    |        ^^^^^^^^^^^^^^^^
 
-error[E0428]: the name `__cmd__list_reference_images` is defined multiple times
-   --> src/safe_references.rs:190:1
-    |
-190 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__cmd__list_reference_images` redefined here
-    |
-   ::: src/references.rs:98:1
-    |
- 98 | #[tauri::command]
-    | ----------------- previous definition of the macro `__cmd__list_reference_images` here
-    |
-    = note: `__cmd__list_reference_images` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0428]: the name `__tauri_command_name_import_reference_image` is defined multiple times
-   --> src/safe_references.rs:224:1
-    |
-224 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_import_reference_image` redefined here
-    |
-   ::: src/references.rs:122:1
-    |
-122 | #[tauri::command]
-    | ----------------- previous definition of the macro `__tauri_command_name_import_reference_image` here
-    |
-    = note: `__tauri_command_name_import_reference_image` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0428]: the name `__cmd__import_reference_image` is defined multiple times
-   --> src/safe_references.rs:224:1
-    |
-224 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__cmd__import_reference_image` redefined here
-    |
-   ::: src/references.rs:122:1
-    |
-122 | #[tauri::command]
-    | ----------------- previous definition of the macro `__cmd__import_reference_image` here
-    |
-    = note: `__cmd__import_reference_image` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0428]: the name `__tauri_command_name_delete_reference_image` is defined multiple times
-   --> src/safe_references.rs:339:1
-    |
-339 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_delete_reference_image` redefined here
-    |
-   ::: src/references.rs:280:1
-    |
-280 | #[tauri::command]
-    | ----------------- previous definition of the macro `__tauri_command_name_delete_reference_image` here
-    |
-    = note: `__tauri_command_name_delete_reference_image` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0428]: the name `__cmd__delete_reference_image` is defined multiple times
-   --> src/safe_references.rs:339:1
-    |
-339 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__cmd__delete_reference_image` redefined here
-    |
-   ::: src/references.rs:280:1
-    |
-280 | #[tauri::command]
-    | ----------------- previous definition of the macro `__cmd__delete_reference_image` here
-    |
-    = note: `__cmd__delete_reference_image` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0428]: the name `__tauri_command_name_create_workspace` is defined multiple times
-   --> src/workspace.rs:131:1
-    |
-131 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_create_workspace` redefined here
-    |
-   ::: src/safe_workspace.rs:21:1
-    |
- 21 | #[tauri::command]
-    | ----------------- previous definition of the macro `__tauri_command_name_create_workspace` here
-    |
-    = note: `__tauri_command_name_create_workspace` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0428]: the name `__cmd__create_workspace` is defined multiple times
-   --> src/workspace.rs:131:1
-    |
-131 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__cmd__create_workspace` redefined here
-    |
-   ::: src/safe_workspace.rs:21:1
-    |
- 21 | #[tauri::command]
-    | ----------------- previous definition of the macro `__cmd__create_workspace` here
-    |
-    = note: `__cmd__create_workspace` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0428]: the name `__tauri_command_name_delete_workspace` is defined multiple times
-   --> src/workspace.rs:283:1
-    |
-283 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__tauri_command_name_delete_workspace` redefined here
-    |
-   ::: src/safe_workspace.rs:33:1
-    |
- 33 | #[tauri::command]
-    | ----------------- previous definition of the macro `__tauri_command_name_delete_workspace` here
-    |
-    = note: `__tauri_command_name_delete_workspace` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0428]: the name `__cmd__delete_workspace` is defined multiple times
-   --> src/workspace.rs:283:1
-    |
-283 | #[tauri::command]
-    | ^^^^^^^^^^^^^^^^^ `__cmd__delete_workspace` redefined here
-    |
-   ::: src/safe_workspace.rs:33:1
-    |
- 33 | #[tauri::command]
-    | ----------------- previous definition of the macro `__cmd__delete_workspace` here
-    |
-    = note: `__cmd__delete_workspace` must be defined only once in the macro namespace of this module
-    = note: this error originates in the attribute macro `tauri::command` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-For more information about this error, try `rustc --explain E0428`.
-error: could not compile `sprite-maker` (lib) due to 28 previous errors
+error: could not compile `sprite-maker` (lib) due to 24 previous errors
 warning: build failed, waiting for other jobs to finish...
-error: could not compile `sprite-maker` (lib test) due to 28 previous errors
+error: could not compile `sprite-maker` (lib test) due to 18 previous errors
