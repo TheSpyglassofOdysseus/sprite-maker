@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ChevronDown, Gauge, SlidersHorizontal } from "lucide-svelte";
-  import { normalizeGenerationProfile, profileForQuality } from "$lib/generation-profiles";
+  import { normalizeGenerationProfile, pitfallEternalProfile, profileForQuality } from "$lib/generation-profiles";
   import type { ChatGenerationProfile, GenerationQuality, ProviderStatus } from "$lib/types";
 
   let { profile, provider, onChange }: {
@@ -14,6 +14,7 @@
   const efforts = $derived(selectedMode?.reasoningEfforts ?? []);
   const qualityLabel = $derived(profile.quality === "mid" ? "Mid" : profile.quality[0].toUpperCase() + profile.quality.slice(1));
   const frameLabel = $derived(profile.frameMode === "auto" ? `Auto ${profile.minFrames}–${profile.maxFrames}f` : `${profile.frames}f`);
+  const pitfallActive = $derived(profile.width === 64 && profile.height === 64 && profile.frames === 8 && profile.fps === 12 && profile.frameMode === "fixed");
 
   function commit(value: ChatGenerationProfile) {
     return onChange(normalizeGenerationProfile(value, provider?.modes ?? []));
@@ -41,12 +42,16 @@
 
     <div class="preset-grid" aria-label="Generation quality">
       {#each ["low", "mid", "high", "custom"] as quality}
-        <button class:active={profile.quality === quality} onclick={() => chooseQuality(quality as GenerationQuality)}>
+        <button class:active={profile.quality === quality && !pitfallActive} onclick={() => chooseQuality(quality as GenerationQuality)}>
           <strong>{quality === "mid" ? "Mid" : quality[0].toUpperCase() + quality.slice(1)}</strong>
           <span>{quality === "low" ? "32px · 4f" : quality === "mid" ? "64px · 6f" : quality === "high" ? "128px · 8f" : "Your values"}</span>
         </button>
       {/each}
     </div>
+
+    <button class="project-preset" class:active={pitfallActive} onclick={() => commit(pitfallEternalProfile(profile))}>
+      <div><strong>Pitfall Eternal</strong><span>Hero production preset</span></div><small>64×64 · 8 frames · 12 FPS · fixed</small>
+    </button>
 
     <div class="frame-policy">
       <div><strong>Frames</strong><span>{profile.frameMode === "auto" ? "Plan the smallest readable motion" : "Respect an exact production count"}</span></div>
@@ -98,9 +103,10 @@
   .generation-menu{position:relative}.generation-menu summary{height:30px;display:flex;align-items:center;gap:7px;padding:0 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--muted);font-size:11px;font-weight:600;list-style:none;cursor:pointer}.generation-menu summary::-webkit-details-marker{display:none}.generation-menu summary:hover,.generation-menu[open] summary{color:var(--text);border-color:var(--border-strong);background:var(--surface-hover)}.generation-menu summary :global(svg:first-child){color:var(--accent)}
   .popover{position:absolute;z-index:35;right:0;bottom:38px;width:min(440px,calc(100vw - 40px));padding:16px;background:var(--surface);border:1px solid var(--border-strong);border-radius:10px;box-shadow:0 22px 64px #000b}.popover-heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:13px}.popover-heading strong,.provider-section strong{font-size:13px}.popover-heading p{font-size:11px;color:var(--faint);margin:3px 0 0}.popover-heading :global(svg){color:var(--faint)}
   .preset-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.preset-grid button{min-width:0;height:54px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--muted);text-align:left;padding:7px 8px;cursor:pointer}.preset-grid button:hover{border-color:var(--border-strong);color:var(--text)}.preset-grid button.active{border-color:var(--accent);background:var(--accent-dim);color:var(--text)}.preset-grid strong,.preset-grid span{display:block}.preset-grid strong{font-size:11px}.preset-grid span{font-size:9px;color:var(--faint);margin-top:4px;white-space:nowrap}
+  .project-preset{width:100%;margin-top:7px;min-height:48px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--muted);padding:8px 10px;display:flex;align-items:center;justify-content:space-between;text-align:left;font:inherit;cursor:pointer}.project-preset:hover{border-color:var(--border-strong);color:var(--text)}.project-preset.active{border-color:var(--accent);background:var(--accent-dim);color:var(--text)}.project-preset strong,.project-preset span{display:block}.project-preset strong{font-size:11px}.project-preset span,.project-preset small{font-size:9px;color:var(--faint);margin-top:3px}.project-preset small{margin:0;white-space:nowrap}
   .frame-policy{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding-top:13px;border-top:1px solid var(--border)}.frame-policy>div:first-child strong,.frame-policy>div:first-child span{display:block}.frame-policy>div:first-child strong{font-size:11px}.frame-policy>div:first-child span{font-size:10px;color:var(--faint);margin-top:3px}.segmented{display:flex;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:2px}.segmented button{height:25px;min-width:53px;border:0;border-radius:4px;background:transparent;color:var(--faint);font:inherit;font-size:10px;cursor:pointer}.segmented button.active{background:var(--surface-hover);color:var(--text);box-shadow:0 0 0 1px var(--border-strong)}
   .fields{display:grid;gap:8px}.fields.dimensions,.fields.three{grid-template-columns:repeat(3,1fr);margin-top:12px}.fields.fixed-count{grid-template-columns:1fr;margin-top:8px}.fields.two{grid-template-columns:1.45fr 1fr;margin-top:10px}.fields label{min-width:0;font-size:10px;color:var(--faint)}input,select{display:block;width:100%;height:31px;margin-top:5px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text);font:inherit;font-size:11px;padding:0 7px;outline:0}input:focus,select:focus{border-color:var(--accent)}select:disabled{opacity:.55}.auto-options{display:flex;gap:17px;margin-top:10px}.auto-options label{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted)}.auto-options input{width:auto;height:auto;margin:0}
   .provider-section{border-top:1px solid var(--border);margin-top:15px;padding-top:14px}.provider-section>div:first-child{display:flex;align-items:baseline;justify-content:space-between}.provider-section>div:first-child span{font-size:10px;color:var(--faint)}.mode-description{font-size:10px;line-height:1.45;color:var(--faint);margin:9px 1px 0}
   .capabilities{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:10px}.capabilities span{font-size:9px;color:var(--faint);border:1px solid var(--border);border-radius:999px;padding:3px 6px}.capabilities span.on{color:var(--muted);border-color:var(--border-strong);background:var(--bg)}.capabilities small{font-size:9px;color:var(--faint);margin-left:auto}
-  @media(max-width:700px){.preset-grid{grid-template-columns:repeat(2,1fr)}.fields.dimensions,.fields.three{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:700px){.preset-grid{grid-template-columns:repeat(2,1fr)}.fields.dimensions,.fields.three{grid-template-columns:repeat(2,1fr)}.project-preset{align-items:flex-start;gap:8px}.project-preset small{white-space:normal;text-align:right}}
 </style>
