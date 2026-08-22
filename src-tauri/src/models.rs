@@ -12,6 +12,29 @@ pub struct Workspace {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProjectBackup {
+    pub format_version: u32,
+    pub project_id: String,
+    pub project_name: String,
+    pub source_path: String,
+    pub backup_path: String,
+    pub created_at: String,
+    pub file_count: u64,
+    pub total_bytes: u64,
+}
+
+/// One-round-trip sidebar payload: every project plus the active project's
+/// worktrees and chats, read under a single database lock.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidebarSnapshot {
+    pub workspaces: Vec<Workspace>,
+    pub worktrees: Vec<Worktree>,
+    pub conversations: Vec<Conversation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Worktree {
     pub id: String,
     pub project_id: String,
@@ -195,6 +218,31 @@ pub struct ProviderStatus {
     pub detail: String,
     pub modes: Vec<ProviderMode>,
     pub capabilities: ProviderCapabilities,
+    #[serde(default)]
+    pub configurable: bool,
+    #[serde(default)]
+    pub has_api_key: bool,
+    pub base_url: Option<String>,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageProviderInput {
+    pub id: String,
+    pub name: String,
+    pub provider_type: String,
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConnectionTest {
+    pub ok: bool,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,15 +271,23 @@ pub struct ProviderMode {
 }
 
 fn default_frame_mode() -> String {
-    "fixed".into()
+    "auto".into()
 }
 
 fn default_min_frames() -> u32 {
-    4
+    8
 }
 
 fn default_max_frames() -> u32 {
     12
+}
+
+fn default_false() -> bool {
+    false
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -248,10 +304,28 @@ pub struct GenerationOptions {
     pub min_frames: u32,
     #[serde(default = "default_max_frames")]
     pub max_frames: u32,
-    #[serde(default)]
+    #[serde(default = "default_false")]
     pub allow_interpolation: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub allow_auto_adjust: bool,
+}
+
+#[cfg(test)]
+mod generation_option_tests {
+    use super::GenerationOptions;
+
+    #[test]
+    fn omitted_frame_policy_defaults_to_full_auto_range() {
+        let options: GenerationOptions =
+            serde_json::from_str(r#"{"quality":"mid","width":64,"height":64,"frames":6,"fps":8}"#)
+                .expect("generation options should deserialize");
+
+        assert_eq!(options.frame_mode, "auto");
+        assert_eq!(options.min_frames, 8);
+        assert_eq!(options.max_frames, 12);
+        assert!(options.allow_auto_adjust);
+        assert!(!options.allow_interpolation);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -287,6 +361,7 @@ pub struct ProviderRequestOptions {
     pub generation: Option<GenerationOptions>,
     #[serde(default)]
     pub reference_ids: Vec<String>,
+    pub image_provider_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -301,12 +376,28 @@ pub struct ProviderEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerationManifest {
+    #[serde(default)]
+    pub kind: Option<String>,
     pub name: String,
     pub category: String,
     pub fps: f64,
     pub files: Vec<String>,
     #[serde(alias = "generation_time", alias = "generated_at")]
     pub generated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetPack {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    pub style: String,
+    pub kind: String,
+    pub files: Vec<String>,
+    #[serde(alias = "created_at")]
+    pub created_at: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -329,6 +420,52 @@ pub struct ExportResult {
     pub metadata_path: String,
     pub width: u32,
     pub height: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerrainRuleInput {
+    pub role: String,
+    pub column: u32,
+    pub row: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerrainExportInput {
+    pub project_id: String,
+    pub worktree_id: String,
+    pub asset_id: String,
+    pub name: String,
+    pub tile_width: u32,
+    pub tile_height: u32,
+    pub margin_x: u32,
+    pub margin_y: u32,
+    pub separation_x: u32,
+    pub separation_y: u32,
+    pub include_empty: bool,
+    #[serde(default)]
+    pub terrain_name: Option<String>,
+    #[serde(default)]
+    pub terrain_mode: Option<String>,
+    #[serde(default)]
+    pub terrain_rules: Vec<TerrainRuleInput>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerrainExportResult {
+    pub directory_path: String,
+    pub texture_path: String,
+    pub resource_path: String,
+    pub columns: u32,
+    pub rows: u32,
+    pub tile_count: u32,
+    pub occupied_tile_count: u32,
+    pub trailing_x: u32,
+    pub trailing_y: u32,
+    pub terrain_rule_count: u32,
+    pub terrain_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -504,6 +641,7 @@ pub struct FrameOptimizationResult {
     pub animation: Animation,
     pub removed_frames: u32,
     pub inserted_frames: u32,
+    pub replaced_frames: u32,
     pub summary: String,
 }
 

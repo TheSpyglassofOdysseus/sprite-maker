@@ -170,6 +170,32 @@ pub(crate) fn upsert(state: &AppState, asset: &Asset, change_kind: &str) -> Comm
 }
 
 #[tauri::command]
+pub fn list_assets(
+    workspace_id: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<Asset>> {
+    let root = workspace_path(&state, &workspace_id)?;
+    let assets_root = root.join("assets");
+    std::fs::create_dir_all(&assets_root)?;
+    app.asset_protocol_scope()
+        .allow_directory(&assets_root, true)
+        .map_err(|error| CommandError::new("asset_scope_error", error.to_string()))?;
+    let connection = state
+        .db
+        .lock()
+        .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
+    let mut statement = connection.prepare(
+        "SELECT id, workspace_id, name, path, relative_path, category, format, width, height, file_size, has_alpha, created_at FROM assets WHERE workspace_id = ?1 ORDER BY category, name",
+    )?;
+    let rows = statement.query_map([&workspace_id], asset_row)?;
+    Ok(rows
+        .filter_map(Result::ok)
+        .filter(|asset| Path::new(&asset.path).is_file())
+        .collect())
+}
+
+#[tauri::command]
 pub fn scan_assets(
     workspace_id: String,
     app: tauri::AppHandle,
@@ -215,7 +241,13 @@ pub fn scan_assets(
         })?;
         for entry in registered.filter_map(Result::ok) {
             if !Path::new(&entry.1).is_file() {
-                connection.execute("DELETE FROM assets WHERE id = ?1", [entry.0])?;
+                // Keep the asset row so historical animations and exported sheets retain
+                // their frame identity. The live browser is built from `assets` above, so
+                // missing files stay hidden while their versions become explicitly unavailable.
+                connection.execute(
+                    "UPDATE asset_versions SET available = 0, selected = 0 WHERE asset_id = ?1 AND path = ?2",
+                    params![entry.0, entry.1],
+                )?;
             }
         }
     }
@@ -459,11 +491,38 @@ pub fn get_generation_manifest(
     state: State<'_, AppState>,
 ) -> CommandResult<Option<GenerationManifest>> {
     let root = workspace_path(&state, &workspace_id)?;
+    read_generation_manifest(&root)
+}
+
+#[tauri::command]
+pub fn get_generation_fingerprint(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<String>> {
+    let root = workspace_path(&state, &workspace_id)?;
+    read_generation_manifest(&root)?
+        .map(|manifest| generation_fingerprint(&root, &manifest))
+        .transpose()
+}
+
+fn generation_fingerprint(root: &Path, manifest: &GenerationManifest) -> CommandResult<String> {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(manifest.name.as_bytes());
+    hasher.update(manifest.category.as_bytes());
+    hasher.update(manifest.fps.to_string().as_bytes());
+    for relative in &manifest.files {
+        hasher.update(relative.as_bytes());
+        hasher.update(content_hash(&root.join(relative))?.as_bytes());
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+fn read_generation_manifest(root: &Path) -> CommandResult<Option<GenerationManifest>> {
     let path = root.join(".sprite-studio/last-generation.json");
     if !path.is_file() {
         return Ok(None);
     }
-    let manifest: GenerationManifest = serde_json::from_str(&std::fs::read_to_string(path)?)
+    let mut manifest: GenerationManifest = serde_json::from_str(&std::fs::read_to_string(&path)?)
         .map_err(|error| CommandError::new("invalid_generation", error.to_string()))?;
     if manifest.files.is_empty()
         || !manifest.files.iter().all(|relative| {
@@ -480,16 +539,120 @@ pub fn get_generation_manifest(
             "Codex returned an invalid sprite generation manifest",
         ));
     }
+    // Provider-authored manifests occasionally contain a rounded or copied
+    // timestamp. The file modification time is the reliable local handoff time
+    // and prevents a completed generation from being rejected until restart.
+    if let Ok(modified) = std::fs::metadata(&path).and_then(|metadata| metadata.modified()) {
+        let modified = chrono::DateTime::<Utc>::from(modified);
+        let declared = chrono::DateTime::parse_from_rfc3339(&manifest.generated_at)
+            .map(|value| value.with_timezone(&Utc));
+        if declared.map_or(true, |declared| modified > declared) {
+            manifest.generated_at = modified.to_rfc3339();
+        }
+    }
     Ok(Some(manifest))
+}
+
+/// Registers only the files named by the provider's validated generation
+/// manifest. This keeps chat completion proportional to the new output instead
+/// of decoding and hashing every image in a large project.
+#[tauri::command]
+pub fn scan_generation_assets(
+    workspace_id: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<Asset>> {
+    let root = workspace_path(&state, &workspace_id)?;
+    let assets_root = root.join("assets");
+    app.asset_protocol_scope()
+        .allow_directory(&assets_root, true)
+        .map_err(|error| CommandError::new("asset_scope_error", error.to_string()))?;
+    let Some(manifest) = read_generation_manifest(&root)? else {
+        return Ok(Vec::new());
+    };
+    let existing_ids = {
+        let connection = state
+            .db
+            .lock()
+            .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
+        let mut statement = connection.prepare(
+            "SELECT path, id FROM assets WHERE workspace_id = ?1",
+        )?;
+        let rows = statement.query_map([&workspace_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.filter_map(Result::ok)
+            .collect::<std::collections::HashMap<_, _>>()
+    };
+    let mut generated = Vec::with_capacity(manifest.files.len());
+    for relative in manifest.files {
+        let path = root.join(relative);
+        let existing_id = existing_ids.get(path.to_string_lossy().as_ref()).cloned();
+        let asset = inspect(&workspace_id, &root, &path, existing_id)?;
+        upsert(&state, &asset, "generated")?;
+        generated.push(asset);
+    }
+    Ok(generated)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{inspect, safe_category, upsert};
+    use super::{generation_fingerprint, inspect, read_generation_manifest, safe_category, upsert};
     use crate::{database, AppState};
     use image::{Rgba, RgbaImage};
     use std::{collections::HashMap, sync::Mutex};
     use uuid::Uuid;
+
+    #[test]
+    fn manifest_uses_its_real_file_time_when_provider_timestamp_is_stale() {
+        let root = std::env::temp_dir().join(format!("sprite-studio-manifest-test-{}", Uuid::new_v4()));
+        let output = root.join("assets/characters/hero.png");
+        std::fs::create_dir_all(output.parent().expect("asset parent")).expect("asset directory");
+        std::fs::write(&output, b"placeholder").expect("asset file");
+        let manifest_path = root.join(".sprite-studio/last-generation.json");
+        std::fs::create_dir_all(manifest_path.parent().expect("manifest parent")).expect("manifest directory");
+        std::fs::write(
+            &manifest_path,
+            r#"{"name":"hero","category":"characters","fps":1,"files":["assets/characters/hero.png"],"generatedAt":"2020-01-01T00:00:00Z"}"#,
+        )
+        .expect("manifest file");
+
+        let manifest = read_generation_manifest(&root)
+            .expect("manifest should load")
+            .expect("manifest should exist");
+        let effective = chrono::DateTime::parse_from_rfc3339(&manifest.generated_at)
+            .expect("effective timestamp");
+        let stale = chrono::DateTime::parse_from_rfc3339("2020-01-01T00:00:00Z")
+            .expect("stale timestamp");
+        assert!(effective > stale);
+
+        std::fs::remove_dir_all(root).expect("test directory should be removed");
+    }
+
+    #[test]
+    fn generation_fingerprint_tracks_output_content_not_manifest_rewrites() {
+        let root = std::env::temp_dir().join(format!("sprite-studio-fingerprint-test-{}", Uuid::new_v4()));
+        let output = root.join("assets/creatures/rabbit.png");
+        std::fs::create_dir_all(output.parent().expect("asset parent")).expect("asset directory");
+        std::fs::write(&output, b"first rabbit").expect("asset file");
+        let manifest = crate::models::GenerationManifest {
+            kind: Some("sprite".into()),
+            name: "rabbit-hop".into(),
+            category: "creatures".into(),
+            fps: 12.0,
+            files: vec!["assets/creatures/rabbit.png".into()],
+            generated_at: "2026-08-19T00:00:00Z".into(),
+        };
+
+        let original = generation_fingerprint(&root, &manifest).expect("first fingerprint");
+        let mut rewritten = manifest.clone();
+        rewritten.generated_at = "2026-08-19T01:00:00Z".into();
+        assert_eq!(original, generation_fingerprint(&root, &rewritten).expect("rewritten fingerprint"));
+
+        std::fs::write(&output, b"repaired rabbit").expect("updated asset");
+        assert_ne!(original, generation_fingerprint(&root, &rewritten).expect("updated fingerprint"));
+        std::fs::remove_dir_all(root).expect("test directory should be removed");
+    }
 
     #[test]
     fn accepts_only_workspace_asset_categories() {

@@ -154,8 +154,8 @@ pub fn create_animation_template(
             "Template frame mode must be Fixed or Auto",
         ));
     }
-    let minimum = min_frames.clamp(1, 32);
-    let maximum = max_frames.clamp(minimum, 32);
+    let minimum = min_frames.clamp(1, 64);
+    let maximum = max_frames.clamp(minimum, 64);
     let (project_id, animation_name, fps, looping, frames_json): (
         String,
         String,
@@ -187,7 +187,7 @@ pub fn create_animation_template(
         ));
     }
     let first_asset = get_asset(&state, &frames[0].asset_id)?;
-    let source_frame_count = frames.len().clamp(1, 32) as u32;
+    let source_frame_count = frames.len().clamp(1, 64) as u32;
     let preferred_frames = if frame_mode == "auto" {
         source_frame_count.clamp(minimum, maximum)
     } else {
@@ -202,7 +202,7 @@ pub fn create_animation_template(
         frame_mode: frame_mode.clone(),
         min_frames: minimum,
         max_frames: maximum,
-        allow_interpolation: false,
+        allow_interpolation: true,
         allow_auto_adjust: frame_mode == "auto",
     };
     let plan = build_motion_plan(motion_description, &planning)?;
@@ -344,7 +344,7 @@ pub fn apply_animation_template(
         frame_mode: template.frame_mode.clone(),
         min_frames: template.min_frames,
         max_frames: template.max_frames,
-        allow_interpolation: false,
+        allow_interpolation: true,
         allow_auto_adjust: template.frame_mode == "auto",
     };
     let motion_plan = build_motion_plan(&template.motion_description, &generation)?;
